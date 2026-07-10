@@ -1,0 +1,86 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 30 20% 98%;
+    --foreground: 20 14% 20%;
+    --card: 0 0% 100%;
+    --card-foreground: 20 14% 20%;
+    --primary: 20 50% 32%;
+    --primary-foreground: 30 40% 98%;
+    --secondary: 30 30% 92%;
+    --secondary-foreground: 20 14% 20%;
+    --muted: 30 20% 94%;
+    --muted-foreground: 20 10% 50%;
+    --accent: 25 55% 65%;
+    --accent-foreground: 20 14% 10%;
+    --destructive: 0 70% 50%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 30 20% 88%;
+    --input: 30 20% 88%;
+    --ring: 20 50% 32%;
+    --radius: 0.5rem;
+    --sidebar-width: 260px;
+    --sidebar-width-collapsed: 64px;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-body;
+    font-family: 'Inter', sans-serif;
+  }
+
+  h1, h2, h3 {
+    font-family: 'Playfair Display', serif;
+  }
+}
+
+@layer components {
+  .sidebar-transition {
+    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .nav-link {
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-all duration-200 cursor-pointer;
+  }
+
+  .nav-link.active {
+    @apply bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground;
+  }
+
+  .card-cafe {
+    @apply bg-card rounded-xl border shadow-sm;
+  }
+
+  .stat-card {
+    @apply card-cafe p-5 flex flex-col gap-3;
+  }
+
+  .badge-status-pending {
+    @apply bg-yellow-100 text-yellow-800 text-xs font-medium px-2 py-0.5 rounded-full;
+  }
+  .badge-status-preparing {
+    @apply bg-blue-100 text-blue-800 text-xs font-medium px-2 py-0.5 rounded-full;
+  }
+  .badge-status-ready {
+    @apply bg-green-100 text-green-800 text-xs font-medium px-2 py-0.5 rounded-full;
+  }
+  .badge-status-completed {
+    @apply bg-gray-100 text-gray-700 text-xs font-medium px-2 py-0.5 rounded-full;
+  }
+  .badge-status-cancelled {
+    @apply bg-red-100 text-red-700 text-xs font-medium px-2 py-0.5 rounded-full;
+  }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: hsl(var(--muted-foreground)); }
