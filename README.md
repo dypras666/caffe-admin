@@ -1,16 +1,31 @@
-# React + Vite
+# ☕ Café Azzura — Admin Panel
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Dashboard operasional untuk Café Azzura. Dibangun dengan React + Vite + Tailwind CSS.
 
-Currently, two official plugins are available:
+## Repositori Terkait
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+| Repo | Deskripsi | Link |
+|------|-----------|------|
+| **caffe-backend** | API Backend | https://github.com/dypras666/caffe-backend |
+| **caffe-admin** | Admin Panel (repo ini) | https://github.com/dypras666/caffe-admin |
+| **caffe-ui** | Customer Website | https://github.com/dypras666/caffe-ui |
 
-## React Compiler
+## Tech Stack
+- React 19 + Vite
+- Tailwind CSS + shadcn/ui
+- Recharts (laporan)
+- Multi-branch support
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Setup
 
-## Expanding the Oxlint configuration
+```bash
+cp .env.example .env   # isi VITE_API_URL
+npm install
+npm run dev            # port 5175
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+## Environment Variables
+
+```env
+VITE_API_URL=http://localhost:3002
+```
