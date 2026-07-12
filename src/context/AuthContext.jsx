@@ -1,6 +1,13 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import api from '../lib/api';
 
+function decodeToken(token) {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    return { exp: payload.exp * 1000, user: payload };
+  } catch { return null; }
+}
+
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
@@ -8,6 +15,18 @@ export function AuthProvider({ children }) {
     try { return JSON.parse(localStorage.getItem('cafe_admin_user')); } catch { return null; }
   });
   const [loading, setLoading] = useState(false);
+
+  // Check session on mount
+  useEffect(() => {
+    const token = localStorage.getItem('cafe_admin_token');
+    if (!token) { setUser(null); return; }
+    const decoded = decodeToken(token);
+    if (!decoded || decoded.exp < Date.now()) {
+      localStorage.removeItem('cafe_admin_token');
+      localStorage.removeItem('cafe_admin_user');
+      setUser(null);
+    }
+  }, []);
 
   const login = async (email, password) => {
     setLoading(true);
