@@ -11,21 +11,22 @@ function decodeToken(token) {
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('cafe_admin_user')); } catch { return null; }
-  });
-  const [loading, setLoading] = useState(false);
+  const [user, setUser] = useState<any>(undefined); // undefined = loading, null = no session, obj = logged in
+  const [loading, setLoading] = useState(true);
 
   // Check session on mount
   useEffect(() => {
     const token = localStorage.getItem('cafe_admin_token');
-    if (!token) { setUser(null); return; }
+    if (!token) { setUser(null); setLoading(false); return; }
     const decoded = decodeToken(token);
     if (!decoded || decoded.exp < Date.now()) {
       localStorage.removeItem('cafe_admin_token');
       localStorage.removeItem('cafe_admin_user');
       setUser(null);
+    } else {
+      try { setUser(JSON.parse(localStorage.getItem('cafe_admin_user') || 'null')); } catch { setUser(null); }
     }
+    setLoading(false);
   }, []);
 
   const login = async (email, password) => {
