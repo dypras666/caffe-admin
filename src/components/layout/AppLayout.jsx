@@ -1,4 +1,5 @@
 import { Outlet, useLocation } from 'react-router-dom';
+import { useState, useEffect } from 'react';
 import { useSidebar } from '../../context/SidebarContext';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
@@ -33,12 +34,33 @@ const PAGE_TITLES = {
   '/wifi-settings': 'Pengaturan WiFi Hotspot',
   '/reports': 'Laporan',
   '/shift': 'Manajemen Shift',
+  '/templates': 'Template Tampilan',
 };
 
 export default function AppLayout() {
   const { collapsed } = useSidebar();
   const location = useLocation();
-  const title = PAGE_TITLES[location.pathname] || 'Café Azzura';
+  const [cafeName, setCafeName] = useState(() => sessionStorage.getItem('admin_cafe_name') || '');
+
+  useEffect(() => {
+    if (cafeName) return;
+    fetch('/api/settings/cafe_name')
+      .then(r => r.json())
+      .then(d => {
+        const n = d?.setting?.setting_value || d?.value || '';
+        if (n) { setCafeName(n); sessionStorage.setItem('admin_cafe_name', n); }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Update document.title on route change
+  useEffect(() => {
+    const pageName = PAGE_TITLES[location.pathname];
+    const base = cafeName || 'Admin';
+    document.title = pageName ? `${pageName} — ${base}` : base;
+  }, [location.pathname, cafeName]);
+
+  const title = PAGE_TITLES[location.pathname] || cafeName || 'Dashboard';
 
   return (
     <div className="h-screen bg-background flex overflow-hidden">

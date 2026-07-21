@@ -4,7 +4,21 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>cafe-admin</title>
+    <title>Admin Panel</title>
+    <script>
+      // Set title from API before React loads
+      (function() {
+        var cached = sessionStorage.getItem('admin_cafe_name');
+        if (cached) { document.title = cached + ' — Admin'; return; }
+        fetch('/api/settings/cafe_name')
+          .then(function(r) { return r.json(); })
+          .then(function(d) {
+            var n = (d && (d.value || (d.setting && d.setting.setting_value))) || '';
+            if (n) { document.title = n + ' — Admin'; sessionStorage.setItem('admin_cafe_name', n); }
+          })
+          .catch(function() {});
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
