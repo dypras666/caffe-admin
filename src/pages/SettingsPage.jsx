@@ -28,6 +28,7 @@ const EMPTY_NEW = { setting_key: '', setting_value: '', setting_type: 'text', se
 // ─── SETTINGS TAB ─────────────────────────────────────────────
 function SettingsTab() {
   const { data, loading, refetch } = useFetch('/settings');
+  const { data: paymentData } = useFetch('/payments/methods');
   const [edited, setEdited] = useState({});
   const [saving, setSaving] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -49,6 +50,20 @@ function SettingsTab() {
 
   const handleSave = async () => {
     if (Object.keys(edited).length === 0) return;
+
+    // Validasi: topup_enabled = true → wajib ada minimal 1 payment method aktif
+    const topupVal = edited['topup_enabled'] !== undefined
+      ? edited['topup_enabled']
+      : settings.find(s => s.setting_key === 'topup_enabled')?.setting_value;
+    const topupOn = topupVal === 'true' || topupVal === true || topupVal === 1;
+    if (topupOn) {
+      const activeMethods = (paymentData?.methods || []).filter(m => m.is_active);
+      if (activeMethods.length === 0) {
+        alert('Fitur Top Up Saldo tidak bisa diaktifkan.\n\nWajib mengaktifkan minimal 1 metode pembayaran terlebih dahulu di halaman Pembayaran (/payments).');
+        return;
+      }
+    }
+
     setSaving(true);
     try {
       await api.put('/settings', { settings: Object.entries(edited).map(([key, value]) => ({ key, value })) });

@@ -1240,7 +1240,7 @@ function SuppliersTab() {
 
 // ─── ADJUSTMENT TAB ──────────────────────────────────────────
 function AdjustmentTab() {
-  const [mode, setMode] = useState('product'); // 'product' | 'ingredient'
+  const [mode, setMode] = useState('ingredient'); // 'product' | 'ingredient'
   return (
     <div className="space-y-4">
       {/* Toggle produk / bahan baku */}

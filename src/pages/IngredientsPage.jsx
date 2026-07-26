@@ -1,3 +1,4 @@
+// v2
 import { useState, useEffect } from 'react';
 import { useFetch } from '../hooks/useApi';
 import api from '../lib/api';
@@ -495,6 +496,8 @@ function CustomUnitBadge({ ingId }) {
 // Panel kelola satuan kustom per bahan
 function CustomUnitsPanel({ ingId, baseUnit }) {
   const { data, loading, refetch } = useFetch(`/ingredients/${ingId}/units`);
+  const { data: unitsData } = useFetch('/units');
+  const masterUnits = (unitsData?.units || []).filter(u => u.is_active);
   const [addOpen, setAddOpen] = useState(false);
   const [editConv, setEditConv] = useState(null);
   const [form, setForm] = useState({ unit_name: '', unit_symbol: '', conversion_qty: '', notes: '' });
@@ -506,7 +509,15 @@ function CustomUnitsPanel({ ingId, baseUnit }) {
   const openEdit = (c) => { setForm({ unit_name: c.unit_name, unit_symbol: c.unit_symbol, conversion_qty: String(parseFloat(c.conversion_qty)), notes: c.notes || '' }); setEditConv(c); setAddOpen(true); };
 
   const handleSave = async (e) => {
-    e.preventDefault(); setSaving(true);
+    e.preventDefault();
+    const qty = parseFloat(form.conversion_qty);
+    if (!form.unit_symbol) return alert('Pilih satuan terlebih dahulu');
+    if (!form.conversion_qty || isNaN(qty) || qty <= 0) return alert('Nilai konversi harus lebih dari 0');
+    if (qty === 1) return alert('Nilai konversi 1 adalah satuan dasar. Gunakan nilai lain (contoh: kg = 1000 jika dasar gram)');
+    // Cek duplikat dengan satuan yang sudah ada (kecuali saat edit satuan yang sama)
+    const isDup = conversions.some(c => c.unit_symbol === form.unit_symbol && (!editConv || c.id !== editConv.id));
+    if (isDup) return alert(`Satuan "${form.unit_symbol}" sudah ada untuk bahan ini`);
+    setSaving(true);
     try {
       if (editConv) await api.put(`/ingredients/units/${editConv.id}`, form);
       else await api.post(`/ingredients/${ingId}/units`, form);
@@ -572,13 +583,28 @@ function CustomUnitsPanel({ ingId, baseUnit }) {
             <h3 className="font-semibold mb-4">{editConv ? 'Edit Satuan' : 'Tambah Satuan Kustom'}</h3>
             <form onSubmit={handleSave} className="space-y-3">
               <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Nama Satuan *</label>
-                  <Input value={form.unit_name} onChange={e => setForm(f => ({ ...f, unit_name: e.target.value }))} required placeholder="Kaleng, Karton, Pak" autoFocus />
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Simbol *</label>
-                  <Input value={form.unit_symbol} onChange={e => setForm(f => ({ ...f, unit_symbol: e.target.value.toLowerCase() }))} required placeholder="kln, ktn, pak" />
+                <div className="col-span-2">
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Satuan *</label>
+                  <select
+                    value={form.unit_symbol}
+                    onChange={e => {
+                      const u = masterUnits.find(u => u.symbol === e.target.value);
+                      setForm(f => ({ ...f, unit_symbol: e.target.value, unit_name: u?.name || e.target.value }));
+                    }}
+                    required
+                    className="flex h-9 w-full rounded-lg border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  >
+                    <option value="">Pilih satuan...</option>
+                    {['weight','volume','count','other'].map(type => {
+                      const group = masterUnits.filter(u => u.type === type);
+                      if (!group.length) return null;
+                      return (
+                        <optgroup key={type} label={type === 'weight' ? 'Berat' : type === 'volume' ? 'Volume' : type === 'count' ? 'Jumlah' : 'Lainnya'}>
+                          {group.map(u => <option key={u.id} value={u.symbol}>{u.name} ({u.symbol})</option>)}
+                        </optgroup>
+                      );
+                    })}
+                  </select>
                 </div>
                 <div className="col-span-2">
                   <label className="text-xs font-medium text-muted-foreground mb-1 block">
@@ -589,7 +615,12 @@ function CustomUnitsPanel({ ingId, baseUnit }) {
                       onChange={e => setForm(f => ({ ...f, conversion_qty: e.target.value }))} required placeholder="400" className="flex-1" />
                     <span className="text-sm text-muted-foreground shrink-0">{baseUnit}</span>
                   </div>
-                  {form.conversion_qty && (
+                  {form.conversion_qty && parseFloat(form.conversion_qty) === 1 && (
+                    <p className="text-[10px] text-amber-600 mt-1 font-medium">
+                      ⚠ Nilai 1 adalah satuan dasar. Masukkan nilai lain (mis. kg = 1000 jika dasar gram).
+                    </p>
+                  )}
+                  {form.conversion_qty && parseFloat(form.conversion_qty) !== 1 && (
                     <p className="text-[10px] text-muted-foreground mt-1">
                       Contoh: 3 {form.unit_symbol || 'satuan'} = {(3 * parseFloat(form.conversion_qty || 0)).toLocaleString('id')} {baseUnit}
                     </p>

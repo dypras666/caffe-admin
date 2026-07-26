@@ -5,14 +5,21 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const apiUrl = env.VITE_API_URL || 'http://localhost:3002'
 
+  const registryUrl = env.VITE_REGISTRY_URL || 'http://localhost:3000'
+
   return {
     plugins: [react()],
     server: {
-      port: 5175,
+      port: 3012,
       proxy: {
         '/api': {
           target: apiUrl,
           changeOrigin: true,
+        },
+        '/registry': {
+          target: registryUrl,
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/registry/, ''),
         },
       },
     },

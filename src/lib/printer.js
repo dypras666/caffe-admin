@@ -215,15 +215,125 @@ export function getDevicePrinter(type) {
   return getDevicePrinters()[type] || null;
 }
 
+// ─── ESC/POS encoder ─────────────────────────────────────────
+// Converts receipt HTML text content to ESC/POS byte commands
+export function buildEscPos(receipt, printer) {
+  const { shop_name, address, phone, order, items, currency = 'Rp' } = receipt;
+  const charW = printer?.char_per_line || 42;
+
+  const ESC = 0x1B;
+  const GS  = 0x1D;
+  const enc = new TextEncoder();
+
+  const bytes = [];
+  const push  = (...bs) => bytes.push(...bs);
+  const text  = (s) => bytes.push(...enc.encode(s));
+  const line  = (s = '') => { text(s); push(0x0A); };
+  const divider = () => line('─'.repeat(charW));
+
+  const pad = (left, right, w = charW) => {
+    const gap = w - left.length - right.length;
+    return left + ' '.repeat(Math.max(1, gap)) + right;
+  };
+  const center = (s, w = charW) => {
+    const pad = Math.max(0, Math.floor((w - s.length) / 2));
+    return ' '.repeat(pad) + s;
+  };
+  const money = (v) => `${currency} ${Number(v || 0).toLocaleString('id')}`;
+
+  // Init + set encoding
+  push(ESC, 0x40);               // ESC @ — init
+  push(ESC, 0x74, 0x00);        // ESC t 0 — PC437 codepage (safe for ASCII)
+
+  // Header — bold + center
+  push(ESC, 0x61, 0x01);        // ESC a 1 — center align
+  push(ESC, 0x45, 0x01);        // ESC E 1 — bold on
+  const headerLines = (printer?.header_text || shop_name || 'Cafe').split('\n');
+  headerLines.forEach(l => line(l));
+  push(ESC, 0x45, 0x00);        // ESC E 0 — bold off
+  if (address) line(address);
+  if (phone)   line(`Tel: ${phone}`);
+  push(ESC, 0x61, 0x00);        // ESC a 0 — left align
+
+  divider();
+  line(pad('No:', order.order_number || '-'));
+  const dt = new Date(order.created_at).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' });
+  line(pad('Tgl:', dt));
+  if (order.table_number || order.table_name) line(pad('Meja:', order.table_name || order.table_number));
+  if (order.customer_name) line(pad('Pelanggan:', order.customer_name));
+  if (order.served_by_name) line(pad('Kasir:', order.served_by_name));
+  divider();
+
+  line(pad('Item', 'Harga'));
+  divider();
+
+  for (const item of items) {
+    const unitPrice = item.unit_price || item.product_price || 0;
+    const total = Number(item.subtotal || unitPrice * item.quantity);
+    line(item.product_name.substring(0, charW));
+    line(pad(`  ${item.quantity} x ${money(unitPrice)}`, money(total)));
+    if (item.notes) line(`  *${item.notes}`.substring(0, charW));
+  }
+
+  divider();
+  line(pad('Subtotal', money(order.subtotal)));
+  if (Number(order.discount) > 0) line(pad('Diskon', `- ${money(order.discount)}`));
+  if (Number(order.tax) > 0) line(pad('Pajak', money(order.tax)));
+  divider();
+
+  push(ESC, 0x45, 0x01);
+  push(GS, 0x21, 0x11);         // GS ! — double width+height
+  line(pad('TOTAL', money(order.total)));
+  push(GS, 0x21, 0x00);
+  push(ESC, 0x45, 0x00);
+
+  line(pad('Bayar', (order.payment_method || '-').toUpperCase()));
+  divider();
+
+  push(ESC, 0x61, 0x01);
+  const footerLines = (printer?.footer_text || 'Terima kasih!').split('\n');
+  footerLines.forEach(l => line(center(l, charW)));
+  push(ESC, 0x61, 0x00);
+
+  // Feed + cut
+  push(0x0A, 0x0A, 0x0A, 0x0A);
+  push(GS, 0x56, 0x42, 0x00);   // GS V B 0 — full cut
+
+  return new Uint8Array(bytes);
+}
+
 // ─── Bluetooth (Web Bluetooth API) ───────────────────────────
+// Known thermal printer GATT service/characteristic UUIDs
+const BT_PRINTER_SERVICES = [
+  '000018f0-0000-1000-8000-00805f9b34fb', // common generic printer
+  '00001101-0000-1000-8000-00805f9b34fb', // serial port profile
+  'e7810a71-73ae-499d-8c15-faa9aef0c3f2', // Xprinter, common clone
+  '49535343-fe7d-4ae5-8fa9-9fafd205e455', // Peripage / Phomemo
+];
+const BT_PRINTER_CHARS = [
+  '00002af1-0000-1000-8000-00805f9b34fb',
+  '00002a00-0000-1000-8000-00805f9b34fb',
+  'bef8d6c9-9c21-4c9e-b632-bd58c1009f9f', // Xprinter write char
+  '49535343-8841-43f4-a8d4-ecbe34729bb3', // Peripage write char
+];
+
+// Persistent BT device cache — survives across print calls within the session
+const _btCache = new Map(); // deviceId → { device, server, characteristic }
+
 export async function scanBluetoothPrinters() {
-  if (!navigator.bluetooth) throw new Error('Web Bluetooth tidak didukung browser ini');
+  if (!navigator.bluetooth) throw new Error('Web Bluetooth tidak didukung browser ini. Gunakan Chrome/Edge di desktop.');
+
   const device = await navigator.bluetooth.requestDevice({
-    filters: [
-      { services: ['000018f0-0000-1000-8000-00805f9b34fb'] }, // common BT printer service
-    ],
-    optionalServices: ['00001101-0000-1000-8000-00805f9b34fb'],
-  });
+    filters: BT_PRINTER_SERVICES.map(s => ({ services: [s] })),
+    optionalServices: BT_PRINTER_SERVICES,
+    // acceptAllDevices as last resort if no service filter matches
+  }).catch(() =>
+    navigator.bluetooth.requestDevice({
+      acceptAllDevices: true,
+      optionalServices: BT_PRINTER_SERVICES,
+    })
+  );
+
   return {
     id: device.id,
     name: device.name || 'Bluetooth Printer',
@@ -234,12 +344,98 @@ export async function scanBluetoothPrinters() {
   };
 }
 
-export async function printViaBluetooth(html, device_id) {
+async function getBtCharacteristic(device) {
+  // Connect GATT server
+  if (!device.gatt.connected) {
+    await device.gatt.connect();
+  }
+  const server = device.gatt;
+
+  // Try each known service
+  for (const svcUuid of BT_PRINTER_SERVICES) {
+    try {
+      const service = await server.getPrimaryService(svcUuid);
+      // Try each known characteristic
+      for (const charUuid of BT_PRINTER_CHARS) {
+        try {
+          const char = await service.getCharacteristic(charUuid);
+          if (char.properties.write || char.properties.writeWithoutResponse) {
+            return { service, char };
+          }
+        } catch {}
+      }
+      // Fallback: enumerate all characteristics in this service
+      const chars = await service.getCharacteristics();
+      for (const c of chars) {
+        if (c.properties.write || c.properties.writeWithoutResponse) {
+          return { service, char: c };
+        }
+      }
+    } catch {}
+  }
+  throw new Error('Karakteristik write tidak ditemukan. Printer mungkin tidak kompatibel dengan Web Bluetooth.');
+}
+
+// Split data into chunks (BT MTU typically 512 bytes, safe with 100-200)
+async function writeInChunks(char, data, chunkSize = 100) {
+  const withResponse = char.properties.write;
+  for (let i = 0; i < data.length; i += chunkSize) {
+    const chunk = data.slice(i, i + chunkSize);
+    if (withResponse) {
+      await char.writeValue(chunk);
+    } else {
+      await char.writeValueWithoutResponse(chunk);
+    }
+    // Small delay between chunks to avoid buffer overflow
+    await new Promise(r => setTimeout(r, 20));
+  }
+}
+
+export async function printViaBluetooth(receipt, printer) {
   if (!navigator.bluetooth) throw new Error('Web Bluetooth tidak didukung');
-  // Web Bluetooth for thermal printers — send ESC/POS via GATT characteristic
-  // This is a best-effort implementation; actual ESC/POS encoding is browser-limited
-  // Fallback: open print window (most reliable cross-browser)
-  printHTML(html);
+
+  const deviceId = printer?.bluetooth_device_id;
+  if (!deviceId) throw new Error('Device ID Bluetooth tidak tersimpan. Scan ulang printer.');
+
+  // Re-request device (required by Web Bluetooth security model)
+  let device;
+  try {
+    const devices = await navigator.bluetooth.getDevices?.() || [];
+    device = devices.find(d => d.id === deviceId);
+  } catch {}
+
+  if (!device) {
+    // Must request again via user gesture — will open picker pre-filtered
+    device = await navigator.bluetooth.requestDevice({
+      acceptAllDevices: true,
+      optionalServices: BT_PRINTER_SERVICES,
+    });
+    if (device.id !== deviceId) {
+      throw new Error('Pilih printer yang sama seperti saat konfigurasi.');
+    }
+  }
+
+  device.addEventListener('gattserverdisconnected', () => {
+    _btCache.delete(deviceId);
+  });
+
+  // Get or reuse cached characteristic
+  let cached = _btCache.get(deviceId);
+  if (!cached || !device.gatt.connected) {
+    cached = await getBtCharacteristic(device);
+    _btCache.set(deviceId, { device, ...cached });
+  }
+
+  const escpos = buildEscPos(receipt, printer);
+  await writeInChunks(cached.char, escpos);
+}
+
+// Disconnect all cached BT devices (call on logout/page unload)
+export function disconnectAllBluetooth() {
+  for (const { device } of _btCache.values()) {
+    device.gatt?.disconnect?.();
+  }
+  _btCache.clear();
 }
 
 // ─── USB (Web USB API) ───────────────────────────────────────
@@ -260,8 +456,9 @@ export async function scanUSBPrinters() {
 }
 
 // ─── Smart print — device-local first, site default fallback ─
-export async function smartPrint(html, sitePrinter, type = 'receipt') {
-  // 1. Check device-local printer override
+// html: pre-built HTML string for browser/network print
+// receipt: raw receipt data object for ESC/POS (Bluetooth/USB)
+export async function smartPrint(html, sitePrinter, type = 'receipt', receipt = null) {
   const devicePrinter = getDevicePrinter(type);
   const printer = devicePrinter || sitePrinter;
 
@@ -282,7 +479,8 @@ export async function smartPrint(html, sitePrinter, type = 'receipt') {
       }
     }
   } else if (conn === 'bluetooth') {
-    await printViaBluetooth(html, printer.bluetooth_device_id);
+    if (!receipt) throw new Error('Data receipt diperlukan untuk print Bluetooth');
+    await printViaBluetooth(receipt, printer);
   } else {
     // browser / USB — use window.print()
     printHTML(html);

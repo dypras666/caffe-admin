@@ -21,7 +21,7 @@ import {
 import {
   getDevicePrinter, setDevicePrinter, removeDevicePrinter,
   scanBluetoothPrinters, scanUSBPrinters,
-  smartPrint, buildReceiptHTML,
+  smartPrint, buildReceiptHTML, printViaBluetooth,
 } from '../lib/printer';
 
 const TYPES = [
@@ -170,31 +170,38 @@ function ConfigureDialog({ type, label, existing, onSave, onClose }) {
     }
   };
 
+  const TEST_RECEIPT = {
+    shop_name: 'TEST PRINT',
+    address: 'Device Printer Test',
+    phone: '',
+    currency: 'Rp',
+    order: {
+      order_number: 'TEST-001',
+      order_type: 'dine-in',
+      table_number: '1',
+      customer_name: 'Test',
+      created_at: new Date().toISOString(),
+      subtotal: 25000,
+      tax: 0,
+      discount: 0,
+      total: 25000,
+      payment_method: 'cash',
+    },
+    items: [{ product_name: 'Test Item', quantity: 1, unit_price: 25000, subtotal: 25000 }],
+  };
+
   const handleTest = async () => {
     setTesting(true);
     setTestResult(null);
     try {
       const printer = printerFromForm(form);
-      const testHtml = buildReceiptHTML({
-        shop_name: 'TEST PRINT',
-        address: 'Device Printer Test',
-        phone: '',
-        currency: 'Rp',
-        order: {
-          order_number: 'TEST-001',
-          order_type: 'dine-in',
-          table_number: '1',
-          customer_name: 'Test',
-          created_at: new Date().toISOString(),
-          subtotal: 25000,
-          tax: 0,
-          discount: 0,
-          total: 25000,
-          payment_method: 'cash',
-        },
-        items: [{ product_name: 'Test Item', quantity: 1, unit_price: 25000, subtotal: 25000 }],
-      }, printer);
-      await smartPrint(testHtml, null, type);
+      if (form.connection === 'bluetooth') {
+        // Bluetooth: send ESC/POS directly — no HTML needed
+        await printViaBluetooth(TEST_RECEIPT, printer);
+      } else {
+        const testHtml = buildReceiptHTML(TEST_RECEIPT, printer);
+        await smartPrint(testHtml, null, type);
+      }
       setTestResult('ok');
     } catch (e) {
       setTestResult(e.message);
@@ -276,9 +283,21 @@ function ConfigureDialog({ type, label, existing, onSave, onClose }) {
                 </div>
               )}
               {form.connection === 'bluetooth' && (
-                <p className="text-[10px] text-muted-foreground">
-                  Membutuhkan Chrome/Edge. Pastikan Bluetooth aktif di perangkat.
-                </p>
+                <div className="space-y-1">
+                  <p className="text-[10px] text-muted-foreground">
+                    Membutuhkan Chrome/Edge desktop. Pastikan Bluetooth aktif.
+                  </p>
+                  {!navigator.bluetooth && (
+                    <p className="text-[10px] text-amber-600 font-medium">
+                      ⚠ Browser ini tidak mendukung Web Bluetooth API.
+                    </p>
+                  )}
+                  {navigator.bluetooth && (
+                    <p className="text-[10px] text-emerald-600 font-medium">
+                      ✓ Web Bluetooth API tersedia di browser ini.
+                    </p>
+                  )}
+                </div>
               )}
               {form.connection === 'usb' && (
                 <p className="text-[10px] text-muted-foreground">

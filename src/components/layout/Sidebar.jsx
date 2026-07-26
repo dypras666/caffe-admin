@@ -7,7 +7,7 @@ import {
   Warehouse, ShieldCheck, MonitorSmartphone, UtensilsCrossed,
   Printer, Layers, FlaskConical, BookMarked, Receipt, Banknote, Building2, QrCode,
   UserCheck, ChefHat, Scale, Users2, Wifi, BarChart3, Clock, Router, FileText,
-  TrendingUp, CalendarCheck, Ticket, DatabaseBackup,
+  TrendingUp, CalendarCheck, Ticket, DatabaseBackup, PanelTop,
 } from 'lucide-react';
 import { useSidebar } from '../../context/SidebarContext';
 import { useAuth } from '../../context/AuthContext';
