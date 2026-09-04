@@ -5,7 +5,9 @@ import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/table';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../components/ui/select';
-import { Loader2, RefreshCw, ChevronLeft, ChevronRight, Check, X } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
+import { Input } from '../components/ui/input';
+import { Loader2, RefreshCw, ChevronLeft, ChevronRight, Check, X, Plus, Banknote } from 'lucide-react';
 
 const STATUS_OPTIONS = ['all', 'pending', 'confirmed', 'cancelled', 'completed'];
 const STATUS_LABEL = { pending: 'Pending', confirmed: 'Dikonfirmasi', cancelled: 'Dibatalkan', completed: 'Selesai' };
@@ -17,6 +19,17 @@ export default function BookingsPage() {
   const [status, setStatus] = useState('all');
   const [page, setPage] = useState(1);
   const [updatingId, setUpdatingId] = useState(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [form, setForm] = useState({
+    name: '', email: '', phone: '', booking_date: '', booking_time: '', guests: 1, special_request: ''
+  });
+
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [selectedBooking, setSelectedBooking] = useState(null);
+  const [paymentForm, setPaymentForm] = useState({
+    payment_status: 'unpaid', dp_amount: 0, total_amount: 0
+  });
 
   const qs = `?page=${page}&limit=10${status !== 'all' ? `&status=${status}` : ''}`;
   const { data, loading, refetch } = useFetch(`/bookings${qs}`);
@@ -33,6 +46,45 @@ export default function BookingsPage() {
       alert(err.response?.data?.error || 'Gagal update');
     } finally {
       setUpdatingId(null);
+    }
+  };
+
+  const handleCreateBooking = async (e) => {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      await api.post('/bookings', form);
+      setIsModalOpen(false);
+      setForm({ name: '', email: '', phone: '', booking_date: '', booking_time: '', guests: 1, special_request: '' });
+      refetch();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Gagal membuat booking');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const openPaymentModal = (b) => {
+    setSelectedBooking(b);
+    setPaymentForm({
+      payment_status: b.payment_status || 'unpaid',
+      dp_amount: Number(b.dp_amount) || 0,
+      total_amount: Number(b.total_amount) || 0
+    });
+    setPaymentModalOpen(true);
+  };
+
+  const handlePaymentSubmit = async (e) => {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      await api.post(`/bookings/${selectedBooking.id}/payment`, paymentForm);
+      setPaymentModalOpen(false);
+      refetch();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Gagal menyimpan pembayaran');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -53,6 +105,11 @@ export default function BookingsPage() {
         <Button variant="outline" size="sm" onClick={refetch} className="gap-1.5">
           <RefreshCw className="w-3.5 h-3.5" />
           Refresh
+        </Button>
+
+        <Button size="sm" onClick={() => setIsModalOpen(true)} className="gap-1.5 ml-2">
+          <Plus className="w-4 h-4" />
+          Tambah Booking
         </Button>
 
         <span className="text-sm text-muted-foreground ml-auto">
@@ -102,8 +159,8 @@ export default function BookingsPage() {
                       {b.dp_amount > 0 ? (
                         <div>
                           <p className="font-medium">Rp {Number(b.dp_amount).toLocaleString('id')}</p>
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${b.dp_paid ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                            {b.dp_paid ? 'Lunas' : 'Belum'}
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${b.payment_status === 'paid' || b.payment_status === 'partial' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                            {b.payment_status === 'paid' || b.payment_status === 'partial' ? 'Dibayar' : 'Belum'}
                           </span>
                         </div>
                       ) : <span className="text-muted-foreground text-xs">Tanpa DP</span>}
@@ -111,10 +168,10 @@ export default function BookingsPage() {
                     <TableCell>
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                         b.payment_status === 'paid' ? 'bg-green-100 text-green-800' :
-                        b.payment_status === 'dp_paid' ? 'bg-blue-100 text-blue-800' :
+                        b.payment_status === 'partial' ? 'bg-blue-100 text-blue-800' :
                         'bg-gray-100 text-gray-600'
                       }`}>
-                        {b.payment_status === 'paid' ? 'Lunas' : b.payment_status === 'dp_paid' ? 'DP Bayar' : 'Belum Bayar'}
+                        {b.payment_status === 'paid' ? 'Lunas' : b.payment_status === 'partial' ? 'Partial / DP' : 'Belum Bayar'}
                       </span>
                     </TableCell>
                     <TableCell>
@@ -140,6 +197,10 @@ export default function BookingsPage() {
                             Selesai
                           </Button>
                         )}
+                        <Button variant="ghost" size="icon" className="text-blue-600 hover:bg-blue-50" disabled={updatingId === b.id}
+                          onClick={() => openPaymentModal(b)} title="Pembayaran">
+                          <Banknote className="w-4 h-4" />
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -163,6 +224,97 @@ export default function BookingsPage() {
           </div>
         </div>
       )}
+
+      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Tambah Booking Manual</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleCreateBooking} className="space-y-4 mt-4">
+            <div className="grid gap-2">
+              <label className="text-sm font-medium">Nama Pemesan</label>
+              <Input required value={form.name} onChange={e => setForm(p => ({...p, name: e.target.value}))} placeholder="Budi Santoso" />
+            </div>
+            <div className="grid gap-2">
+              <label className="text-sm font-medium">Email</label>
+              <Input required type="email" value={form.email} onChange={e => setForm(p => ({...p, email: e.target.value}))} placeholder="budi@example.com" />
+            </div>
+            <div className="grid gap-2">
+              <label className="text-sm font-medium">No. Telepon / WA</label>
+              <Input required value={form.phone} onChange={e => setForm(p => ({...p, phone: e.target.value}))} placeholder="081234567890" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <label className="text-sm font-medium">Tanggal</label>
+                <Input required type="date" value={form.booking_date} onChange={e => setForm(p => ({...p, booking_date: e.target.value}))} />
+              </div>
+              <div className="grid gap-2">
+                <label className="text-sm font-medium">Waktu</label>
+                <Input required type="time" value={form.booking_time} onChange={e => setForm(p => ({...p, booking_time: e.target.value}))} />
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <label className="text-sm font-medium">Jumlah Tamu (Pax)</label>
+              <Input required type="number" min="1" value={form.guests} onChange={e => setForm(p => ({...p, guests: e.target.value}))} />
+            </div>
+            <div className="grid gap-2">
+              <label className="text-sm font-medium">Permintaan Khusus</label>
+              <Input value={form.special_request} onChange={e => setForm(p => ({...p, special_request: e.target.value}))} placeholder="Opsional (cth: Di pojok)" />
+            </div>
+            <div className="flex justify-end gap-2 pt-4">
+              <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>Batal</Button>
+              <Button type="submit" disabled={submitting}>
+                {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                Simpan Booking
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={paymentModalOpen} onOpenChange={setPaymentModalOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Manajemen Pembayaran Booking</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handlePaymentSubmit} className="space-y-4 mt-4">
+            <div className="grid gap-2">
+              <label className="text-sm font-medium">Status Pembayaran</label>
+              <Select value={paymentForm.payment_status} onValueChange={v => setPaymentForm(p => ({...p, payment_status: v}))}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="unpaid">Belum Bayar</SelectItem>
+                  <SelectItem value="partial">Partial / DP</SelectItem>
+                  <SelectItem value="paid">Lunas</SelectItem>
+                  <SelectItem value="refunded">Refund</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <label className="text-sm font-medium">Total Tagihan (Rp)</label>
+              <Input required type="number" min="0" value={paymentForm.total_amount} onChange={e => setPaymentForm(p => ({...p, total_amount: e.target.value}))} />
+            </div>
+            <div className="grid gap-2">
+              <label className="text-sm font-medium">Nominal DP / Dibayar (Rp)</label>
+              <Input required type="number" min="0" value={paymentForm.dp_amount} onChange={e => setPaymentForm(p => ({...p, dp_amount: e.target.value}))} />
+            </div>
+            
+            <div className="flex justify-end gap-2 pt-4">
+              <Button type="button" variant="outline" onClick={() => setPaymentModalOpen(false)}>Batal</Button>
+              <Button type="submit" disabled={submitting}>
+                {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                Simpan Pembayaran
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
