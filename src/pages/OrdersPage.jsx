@@ -11,8 +11,9 @@ import { Button } from '../components/ui/button';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/table';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
+import { Input } from '../components/ui/input';
 import { ServerSelect } from '../components/ui/server-select';
-import { Loader2, RefreshCw, ChevronLeft, ChevronRight, ShoppingBag, TrendingUp, Clock, XCircle, Printer, X, Plus, Minus, Trash2, AlertCircle, Scissors, FileSpreadsheet, FileText } from 'lucide-react';
+import { Loader2, RefreshCw, ChevronLeft, ChevronRight, ShoppingBag, TrendingUp, Clock, XCircle, Printer, X, Plus, Minus, Trash2, AlertCircle, Scissors, FileSpreadsheet, FileText, Wallet } from 'lucide-react';
 import { exportOrdersPDF, exportOrdersExcel } from '../lib/export';
 
 const STATUS_OPTIONS = ['all', 'pending', 'preparing', 'ready', 'completed', 'cancelled'];
@@ -196,7 +197,7 @@ function CancelRequestsPanel({ onClose, onUpdated }) {
   );
 }
 
-function OrderDetailPanel({ orderId, onClose, onStatusUpdated }) {
+function OrderDetailPanel({ orderId, onClose, onStatusUpdated, autoOpenPayment }) {
   const { can } = usePermissions();
   const navigate = useNavigate();
   const canUpdateStatus = can('update_status', 'orders');
@@ -219,6 +220,9 @@ function OrderDetailPanel({ orderId, onClose, onStatusUpdated }) {
   const [cancelRequestSent, setCancelRequestSent] = useState(false);
   // Split bill
   const [splitOpen, setSplitOpen] = useState(false);
+  // Payment dialog
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [payMethod, setPayMethod] = useState('cash');
 
   const loadDetail = useCallback(async () => {
     if (!orderId) return;
@@ -238,6 +242,12 @@ function OrderDetailPanel({ orderId, onClose, onStatusUpdated }) {
     loadDetail();
   }, [orderId, loadDetail]);
 
+  useEffect(() => {
+    if (autoOpenPayment && detail && detail.payment_status !== 'paid') {
+      setPaymentDialogOpen(true);
+    }
+  }, [autoOpenPayment, detail]);
+
   // Close on Escape key
   useEffect(() => {
     const handler = (e) => { if (e.key === 'Escape') onClose(); };
@@ -253,6 +263,20 @@ function OrderDetailPanel({ orderId, onClose, onStatusUpdated }) {
       onStatusUpdated();
     } catch (err) {
       alert(err.response?.data?.error || 'Gagal update status');
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  const handlePayment = async () => {
+    setUpdatingId(orderId);
+    try {
+      await api.put(`/orders/${orderId}/payment`, { payment_status: 'paid', payment_method: payMethod });
+      setPaymentDialogOpen(false);
+      await loadDetail();
+      onStatusUpdated();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Gagal proses pembayaran');
     } finally {
       setUpdatingId(null);
     }
@@ -431,18 +455,52 @@ function OrderDetailPanel({ orderId, onClose, onStatusUpdated }) {
           </DialogHeader>
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">Masukkan alasan pembatalan pesanan ini. Permintaan akan dikirim ke owner untuk disetujui.</p>
-            <textarea
-              value={cancelReason}
-              onChange={e => setCancelReason(e.target.value)}
-              placeholder="Alasan pembatalan..."
-              rows={3}
-              className="flex w-full rounded-lg border border-input bg-background px-3 py-2 text-sm shadow-sm resize-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            />
-            <div className="flex gap-2 justify-end">
-              <Button variant="outline" size="sm" onClick={() => setCancelDialogOpen(false)}>Batal</Button>
-              <Button size="sm" variant="destructive" disabled={!!updatingId || !cancelReason.trim()} onClick={handleCancelRequest}>
+            <div className="space-y-4 pt-2">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Alasan Batal (opsional)</label>
+                <Input placeholder="Contoh: salah input..." value={cancelReason} onChange={e => setCancelReason(e.target.value)} />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" size="sm" onClick={() => setCancelDialogOpen(false)}>Batal</Button>
+                <Button size="sm" variant="destructive" onClick={handleCancelRequest} disabled={!!updatingId}>
+                  {updatingId ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Kirim Request'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Proses Pembayaran</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Metode Pembayaran</label>
+              <Select value={payMethod} onValueChange={setPayMethod}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cash">Tunai (Cash)</SelectItem>
+                  <SelectItem value="qris">QRIS</SelectItem>
+                  <SelectItem value="card">Kartu Debit/Kredit</SelectItem>
+                  <SelectItem value="transfer">Transfer Bank</SelectItem>
+                  <SelectItem value="balance">Saldo Member</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex justify-between items-center bg-muted/30 p-3 rounded-lg border">
+              <span className="text-sm text-muted-foreground">Total Tagihan</span>
+              <span className="font-bold text-lg">{formatRp(detail?.total)}</span>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" size="sm" onClick={() => setPaymentDialogOpen(false)}>Batal</Button>
+              <Button size="sm" onClick={handlePayment} disabled={!!updatingId} className="bg-green-600 hover:bg-green-700">
                 {updatingId ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null}
-                Kirim Permintaan
+                Konfirmasi Lunas
               </Button>
             </div>
           </div>
@@ -742,6 +800,14 @@ function OrderDetailPanel({ orderId, onClose, onStatusUpdated }) {
                 </Button>
               )}
 
+              {/* Payment button */}
+              {detail.payment_status !== 'paid' && (
+                <Button variant="default" size="sm" className="w-full gap-1.5 text-xs bg-green-600 hover:bg-green-700"
+                  onClick={() => setPaymentDialogOpen(true)}>
+                  <Wallet className="w-3.5 h-3.5" /> Bayar Pesanan
+                </Button>
+              )}
+
               {/* Status action buttons */}
               {(NEXT_STATUS[detail.order_status] || ['pending', 'preparing', 'ready'].includes(detail.order_status)) && !editMode && (canUpdateStatus || canCancel) && (
                 <div className="flex gap-2 border-t pt-3">
@@ -782,6 +848,7 @@ export default function OrdersPage() {
   const [branchFilter, setBranchFilter] = useState('all');
   const [updatingId, setUpdatingId] = useState(null);
   const [selectedOrderId, setSelectedOrderId] = useState(null);
+  const [openPaymentForId, setOpenPaymentForId] = useState(null);
   const [cancelPanelOpen, setCancelPanelOpen] = useState(false);
   const [cancelRequestCount, setCancelRequestCount] = useState(0);
 
@@ -1056,6 +1123,27 @@ export default function OrdersPage() {
                     </TableCell>
                     <TableCell onClick={e => e.stopPropagation()}>
                       <div className="flex items-center gap-1.5">
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => setSelectedOrderId(order.id)}
+                          className="text-xs h-7 px-2"
+                        >
+                          Detail
+                        </Button>
+                        {order.payment_status !== 'paid' && (
+                          <Button
+                            size="sm"
+                            variant="default"
+                            className="text-xs h-7 px-2 bg-green-600 hover:bg-green-700"
+                            onClick={() => {
+                              setOpenPaymentForId(order.id);
+                              setSelectedOrderId(order.id);
+                            }}
+                          >
+                            Bayar
+                          </Button>
+                        )}
                         {canUpdateStatus && NEXT_STATUS[order.order_status] && (
                           <Button
                             size="sm"
@@ -1109,7 +1197,11 @@ export default function OrdersPage() {
       {selectedOrderId && (
         <OrderDetailPanel
           orderId={selectedOrderId}
-          onClose={() => setSelectedOrderId(null)}
+          autoOpenPayment={openPaymentForId === selectedOrderId}
+          onClose={() => {
+            setSelectedOrderId(null);
+            setOpenPaymentForId(null);
+          }}
           onStatusUpdated={refetch}
         />
       )}

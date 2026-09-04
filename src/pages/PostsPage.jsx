@@ -388,7 +388,7 @@ export default function PostsPage() {
                       <TableCell>
                         <div className="flex items-center gap-2">
                           {p.cover_image && (
-                            <img src={p.cover_image.startsWith('http') ? p.cover_image : `http://localhost:3002${p.cover_image}`}
+                            <img src={p.cover_image.startsWith('http') ? p.cover_image : `${p.cover_image}`}
                               alt="" className="w-10 h-10 rounded-lg object-cover border shrink-0" />
                           )}
                           <div>
@@ -542,7 +542,7 @@ export default function PostsPage() {
                 <label className="text-xs font-medium text-muted-foreground mb-1 block">Cover Image</label>
                 <div className="flex items-center gap-3">
                   {form.cover_image && (
-                    <img src={form.cover_image.startsWith('http') ? form.cover_image : `http://localhost:3002${form.cover_image}`}
+                    <img src={form.cover_image.startsWith('http') ? form.cover_image : `${form.cover_image}`}
                       alt="cover" className="w-20 h-14 rounded-lg object-cover border" />
                   )}
                   <label className="flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed cursor-pointer hover:bg-muted/50 text-sm text-muted-foreground">
@@ -560,7 +560,7 @@ export default function PostsPage() {
                 <div className="flex flex-wrap gap-2 mb-2">
                   {form.gallery.map((url, i) => (
                     <div key={i} className="relative group w-16 h-16 rounded-lg overflow-hidden border">
-                      <img src={url.startsWith('http') ? url : `http://localhost:3002${url}`} alt="" className="w-full h-full object-cover" />
+                      <img src={url.startsWith('http') ? url : `${url}`} alt="" className="w-full h-full object-cover" />
                       <button type="button" onClick={() => setForm(f => ({ ...f, gallery: f.gallery.filter((_, j) => j !== i) }))}
                         className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100">
                         <X className="w-3 h-3" />

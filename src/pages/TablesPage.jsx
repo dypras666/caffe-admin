@@ -400,7 +400,7 @@ function TableCard({ table, onEdit, onDelete, onStatusChange, updating }) {
             className="flex-1 text-[9px] bg-white/40 hover:bg-white/60 rounded px-1 py-0.5 truncate transition-colors font-medium"
             title={STATUS_LABEL[s]}
           >
-            {STATUS_LABEL[s].slice(0, 4)}
+            {STATUS_LABEL[s]}
           </button>
         ))}
         <button

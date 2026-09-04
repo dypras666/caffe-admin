@@ -41,18 +41,22 @@ export default function DashboardPage() {
   }
 
   const stats = data || {};
+  const orders_today = stats.total_orders ?? 0;
+  const revenue_today = stats.total_revenue ?? 0;
+  const bookings_pending = stats.total_bookings_pending ?? 0;
+  const total_users = stats.total_users ?? 0; // backend doesn't return this currently
   const recentOrders = stats.recent_orders || [];
-  const salesData = stats.sales_chart || [];
+  const salesData = stats.revenue_last_7_days || [];
   const topProducts = stats.top_products || [];
 
   return (
     <div className="space-y-6">
       {/* Stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard icon={ShoppingBag} label="Total Pesanan Hari Ini" value={stats.orders_today ?? 0} sub="Semua status" color="bg-primary" />
-        <StatCard icon={TrendingUp} label="Revenue Hari Ini" value={stats.revenue_today ? `Rp ${Number(stats.revenue_today).toLocaleString('id')}` : 'Rp 0'} sub="Pesanan selesai" color="bg-emerald-600" />
-        <StatCard icon={ClipboardList} label="Booking Aktif" value={stats.bookings_pending ?? 0} sub="Belum dikonfirmasi" color="bg-amber-500" />
-        <StatCard icon={Users} label="Total Member" value={stats.total_users ?? 0} sub="Admin + Kasir + Member" color="bg-violet-600" />
+        <StatCard icon={ShoppingBag} label="Total Pesanan Hari Ini" value={orders_today} sub="Semua status" color="bg-primary" />
+        <StatCard icon={TrendingUp} label="Revenue Hari Ini" value={revenue_today ? `Rp ${Number(revenue_today).toLocaleString('id')}` : 'Rp 0'} sub="Pesanan selesai" color="bg-emerald-600" />
+        <StatCard icon={ClipboardList} label="Booking Aktif" value={bookings_pending} sub="Belum dikonfirmasi" color="bg-amber-500" />
+        <StatCard icon={Users} label="Total Member" value={total_users} sub="Admin + Kasir + Member" color="bg-violet-600" />
       </div>
 
       <div className="grid lg:grid-cols-3 gap-5">

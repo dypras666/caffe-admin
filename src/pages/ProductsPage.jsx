@@ -57,7 +57,10 @@ export default function ProductsPage() {
   const openCreate = () => { setForm(EMPTY_FORM); setEditId(null); setOpen(true); };
   const openEdit = (p) => {
     let gallery = [];
-    try { gallery = typeof p.gallery === 'string' ? JSON.parse(p.gallery) : (p.gallery || []); } catch { gallery = []; }
+    try { 
+      gallery = typeof p.gallery === 'string' ? JSON.parse(p.gallery) : (p.gallery || []); 
+      if (!Array.isArray(gallery)) gallery = [];
+    } catch { gallery = []; }
     setForm({
       name: p.name, description: p.description || '', price: p.price,
       cost_price: p.cost_price || '', sku: p.sku || '',
@@ -190,7 +193,7 @@ export default function ProductsPage() {
                     <TableCell>
                       <div className="flex items-center gap-3">
                         {p.image && (
-                          <img src={p.image.startsWith('http') ? p.image : `http://localhost:3002${p.image}`} alt="" className="w-10 h-10 rounded-lg object-cover border shrink-0" />
+                          <img src={p.image.startsWith('http') ? p.image : `${p.image}`} alt="" className="w-10 h-10 rounded-lg object-cover border shrink-0" />
                         )}
                         {!p.image && (
                           <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center shrink-0">
@@ -321,9 +324,9 @@ export default function ProductsPage() {
               <div className="col-span-2">
                 <label className="text-xs font-medium text-muted-foreground mb-1 block">Gambar Produk</label>
                 <div className="flex flex-wrap gap-2 mb-2">
-                  {(form.gallery || []).map((url, i) => (
+                  {(Array.isArray(form.gallery) ? form.gallery : []).map((url, i) => (
                     <div key={i} className="relative group w-16 h-16 rounded-lg overflow-hidden border">
-                      <img src={url.startsWith('http') ? url : `http://localhost:3002${url}`} alt="" className="w-full h-full object-cover" />
+                      <img src={url.startsWith('http') ? url : `${url}`} alt="" className="w-full h-full object-cover" />
                       <button
                         type="button"
                         onClick={() => setForm(f => ({ ...f, gallery: f.gallery.filter((_, j) => j !== i), image: f.gallery.length === 1 ? '' : f.image }))}

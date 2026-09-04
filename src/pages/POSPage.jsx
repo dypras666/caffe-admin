@@ -1411,7 +1411,11 @@ function CheckoutDialog({
                           : 'border-border hover:border-primary/40'
                     )}
                   >
-                    <span className="text-xl">{m.icon || ICONS[m.type] || '💳'}</span>
+                    {m.icon?.startsWith('http') || m.icon?.startsWith('/') ? (
+                      <img src={m.icon.startsWith('http') ? m.icon : `/uploads/${m.icon.replace(/^\/uploads\//, '')}`} alt={m.name} className="h-6 w-auto object-contain" />
+                    ) : (
+                      <span className="text-xl">{m.icon || ICONS[m.type] || '💳'}</span>
+                    )}
                     <span className="text-[10px] text-center leading-tight">{m.name}</span>
                     {isBalance && selectedMember && (
                       <span className="text-[9px] text-emerald-600 font-bold">

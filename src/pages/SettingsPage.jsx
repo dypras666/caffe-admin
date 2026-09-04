@@ -7,13 +7,15 @@ import { Input } from '../components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../components/ui/select';
 import { Badge } from '../components/ui/badge';
-import { Plus, Save, Loader2, UserCheck, Users, Mail, Phone, ShieldCheck, Activity, Info, Building2 } from 'lucide-react';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/table';
+import { Plus, Save, Loader2, UserCheck, Users, Mail, Phone, ShieldCheck, Activity, Info, Building2, Server, RefreshCw, CheckCircle, XCircle, Clock } from 'lucide-react';
 
 // ─── CONSTANTS ────────────────────────────────────────────────
 const TABS = [
   { key: 'settings', label: 'Pengaturan', icon: Info },
   { key: 'audit', label: 'Aktivitas', icon: Activity },
   { key: 'system', label: 'Sistem', icon: ShieldCheck },
+  { key: 'queue', label: 'Queue Sync', icon: Server },
 ];
 
 const GROUPS = ['general', 'contact', 'social', 'appearance', 'payment', 'notification', 'booking', 'table', 'pos', 'member', 'other'];
@@ -137,6 +139,49 @@ function SettingsTab() {
             </option>
           ))}
         </select>
+      );
+    }
+    if (setting.setting_type === 'image') {
+      return (
+        <div className="flex flex-col gap-2 items-start">
+          {val && (
+            <img 
+              src={val.startsWith('http') ? val : `/uploads/${val}`} 
+              alt="Preview" 
+              className="h-16 max-w-full object-contain rounded border bg-muted/30 p-1" 
+            />
+          )}
+          <div className="flex items-center gap-2">
+            <label className="cursor-pointer">
+              <span className="text-xs bg-secondary text-secondary-foreground hover:bg-secondary/80 px-3 py-1.5 rounded-md transition-colors border">
+                Pilih Gambar
+              </span>
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={async (e) => {
+                  const file = e.target.files[0];
+                  if (!file) return;
+                  const fd = new FormData();
+                  fd.append('file', file);
+                  try {
+                    const res = await api.post('/media/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+                    onChange(res.data.file?.url || res.data.file?.file_path || res.data.url || res.data.file_path);
+                  } catch (err) {
+                    alert('Gagal upload gambar');
+                  }
+                  e.target.value = '';
+                }}
+              />
+            </label>
+            {val && (
+              <button type="button" className="text-xs text-destructive hover:underline" onClick={() => onChange('')}>
+                Hapus
+              </button>
+            )}
+          </div>
+        </div>
       );
     }
     return <Input type={setting.setting_type === 'number' ? 'number' : 'text'} value={val || ''} onChange={e => onChange(e.target.value)} />;
@@ -385,6 +430,63 @@ function SystemTab() {
   );
 }
 
+
+// ─── QUEUE TAB ─────────────────────────────────────────────────
+function QueueTab() {
+  const { data, loading, refetch } = useFetch('/mobile/sync/items?device_id=all');
+  const items = data?.items || [];
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between">
+        <CardTitle className="text-base">Antrean Sinkronisasi (Seluruh Perangkat)</CardTitle>
+        <Button variant="outline" size="sm" onClick={refetch} disabled={loading}>
+          <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} /> Refresh
+        </Button>
+      </CardHeader>
+      <CardContent>
+        {loading && items.length === 0 ? (
+          <div className="py-8 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-muted-foreground" /></div>
+        ) : (
+          <div className="rounded-md border overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Waktu</TableHead>
+                  <TableHead>Device</TableHead>
+                  <TableHead>Tipe</TableHead>
+                  <TableHead>ID Lokal</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Pesan Error</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {items.length === 0 ? (
+                  <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground">Tidak ada antrean sinkronisasi.</TableCell></TableRow>
+                ) : items.map(item => (
+                  <TableRow key={item.id}>
+                    <TableCell className="whitespace-nowrap text-xs">{new Date(item.created_at).toLocaleString('id-ID')}</TableCell>
+                    <TableCell className="text-xs font-mono">{item.device_id}</TableCell>
+                    <TableCell className="text-xs uppercase">{item.entity_type}</TableCell>
+                    <TableCell className="text-xs font-mono">{item.local_id}</TableCell>
+                    <TableCell>
+                      {item.status === 'done' ? <Badge variant="success" className="text-[10px]">Sukses</Badge> :
+                       item.status === 'failed' ? <Badge variant="destructive" className="text-[10px]">Gagal ({item.attempts}x)</Badge> :
+                       item.status === 'processing' ? <Badge variant="warning" className="text-[10px]">Proses</Badge> :
+                       <Badge variant="secondary" className="text-[10px]">Pending</Badge>}
+                    </TableCell>
+                    <TableCell className="text-xs max-w-[200px] truncate" title={item.error_msg}>{item.error_msg || '-'}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 // ─── MAIN PAGE ─────────────────────────────────────────────────
 export default function SettingsPage() {
   const [tab, setTab] = useState('settings');
@@ -410,6 +512,7 @@ export default function SettingsPage() {
       {tab === 'settings' && <SettingsTab />}
       {tab === 'audit' && <AuditTab />}
       {tab === 'system' && <SystemTab />}
+      {tab === 'queue' && <QueueTab />}
     </div>
   );
 }

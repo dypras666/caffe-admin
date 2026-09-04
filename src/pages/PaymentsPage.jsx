@@ -77,7 +77,7 @@ function PaymentMethodsTab() {
         const fd = new FormData();
         fd.append('file', iconFile);
         const res = await api.post('/media/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-        form.icon = res.data.media?.url || res.data.url;
+        form.icon = res.data.file?.url || res.data.file?.file_path || res.data.url;
       }
       if (editId) await api.put(`/payments/methods/${editId}`, form);
       else await api.post('/payments/methods', form);

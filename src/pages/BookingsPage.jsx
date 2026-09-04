@@ -271,10 +271,6 @@ export default function BookingsPage() {
           </form>
         </DialogContent>
       </Dialog>
-    </div>
-          </form>
-        </DialogContent>
-      </Dialog>
 
       <Dialog open={paymentModalOpen} onOpenChange={setPaymentModalOpen}>
         <DialogContent className="sm:max-w-[425px]">
