@@ -455,6 +455,53 @@ export async function scanUSBPrinters() {
   };
 }
 
+export async function printViaUSB(receipt, printer) {
+  if (!navigator.usb) throw new Error('Web USB tidak didukung');
+  
+  const vendorId = printer.usb_vendor_id;
+  const productId = printer.usb_product_id;
+  
+  if (!vendorId || !productId) {
+    throw new Error('ID USB Printer tidak valid. Harap scan ulang printer Anda.');
+  }
+
+  const devices = await navigator.usb.getDevices();
+  let device = devices.find(d => d.vendorId === vendorId && d.productId === productId);
+
+  if (!device) {
+    device = await navigator.usb.requestDevice({ filters: [{ classCode: 7 }] });
+    if (device.vendorId !== vendorId || device.productId !== productId) {
+      throw new Error('Pilih printer USB yang sama dengan yang dikonfigurasi.');
+    }
+  }
+
+  if (!device.opened) await device.open();
+  if (device.configuration === null) await device.selectConfiguration(1);
+  
+  // Claim first interface (usually the printer interface)
+  const ifaceIndex = device.configuration.interfaces[0].interfaceNumber;
+  await device.claimInterface(ifaceIndex);
+
+  const iface = device.configuration.interfaces[0].alternate;
+  let outEndpoint = null;
+  for (const ep of iface.endpoints) {
+    if (ep.direction === 'out' && ep.type === 'bulk') {
+      outEndpoint = ep.endpointNumber;
+      break;
+    }
+  }
+  
+  if (outEndpoint === null) throw new Error('Output endpoint USB tidak ditemukan pada printer ini.');
+
+  const escpos = buildEscPos(receipt, printer);
+  // Send data in chunks of 64 bytes (common for USB)
+  const chunkSize = 64;
+  for (let i = 0; i < escpos.length; i += chunkSize) {
+    const chunk = escpos.slice(i, i + chunkSize);
+    await device.transferOut(outEndpoint, chunk);
+  }
+}
+
 // ─── Smart print — device-local first, site default fallback ─
 // html: pre-built HTML string for browser/network print
 // receipt: raw receipt data object for ESC/POS (Bluetooth/USB)
@@ -481,8 +528,11 @@ export async function smartPrint(html, sitePrinter, type = 'receipt', receipt = 
   } else if (conn === 'bluetooth') {
     if (!receipt) throw new Error('Data receipt diperlukan untuk print Bluetooth');
     await printViaBluetooth(receipt, printer);
+  } else if (conn === 'usb') {
+    if (!receipt) throw new Error('Data receipt diperlukan untuk print USB');
+    await printViaUSB(receipt, printer);
   } else {
-    // browser / USB — use window.print()
+    // browser — use window.print()
     printHTML(html);
   }
 }

@@ -23,7 +23,6 @@ const TYPE_CONFIG = {
 const CONN_CONFIG = {
   browser: { label: 'Browser (window.print)', icon: Monitor },
   network: { label: 'Jaringan (IP:Port)', icon: Wifi },
-  usb: { label: 'USB', icon: Usb },
 };
 
 const EMPTY = {
@@ -173,13 +172,14 @@ export default function PrintersPage() {
       {/* Info box */}
       <Card className="border-blue-200 bg-blue-50/50">
         <CardContent className="pt-4">
-          <p className="text-sm font-medium text-blue-800 mb-2 flex items-center gap-2"><Monitor className="w-4 h-4" />Tentang Printer Browser</p>
+          <p className="text-sm font-medium text-blue-800 mb-2 flex items-center gap-2"><Monitor className="w-4 h-4" />Tentang Konfigurasi Printer</p>
           <ul className="text-xs text-blue-700 space-y-1 list-disc list-inside">
-            <li>Mode <strong>Browser</strong> menggunakan window.print() — tidak perlu driver khusus</li>
-            <li>Sambungkan printer thermal ke komputer kasir, set sebagai printer default</li>
-            <li>Saat print, pilih printer thermal di dialog print browser</li>
-            <li>Atur ukuran kertas di printer ke 80mm atau 58mm sesuai konfigurasi</li>
-            <li>Mode <strong>Jaringan</strong> memerlukan print bridge (server lokal) di port yang ditentukan</li>
+            <li>Halaman ini mengatur printer <strong>Global/Server</strong> (Printer Jaringan / Default Browser).</li>
+            <li>Mode <strong>Browser</strong> menggunakan window.print() — tidak perlu driver khusus.</li>
+            <li>Mode <strong>Jaringan</strong> memerlukan print bridge (server lokal) di IP & port yang ditentukan.</li>
+            <li className="mt-2 font-semibold">Ingin menggunakan printer Bluetooth atau USB (API Chrome)?</li>
+            <li>Konfigurasi USB/Bluetooth bersifat lokal untuk perangkat Anda.</li>
+            <li>Klik <strong className="inline-flex items-center gap-1 mx-1 border rounded px-1 py-0.5 bg-white"><Printer className="w-3 h-3"/> Ikon Printer</strong> di pojok kanan atas (samping tombol profil) untuk menghubungkan printer USB/Bluetooth.</li>
           </ul>
         </CardContent>
       </Card>
