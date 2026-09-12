@@ -4,9 +4,10 @@ import api from '../lib/api';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
-import { Upload, Trash2, Loader2, Image, Copy, Check, Eye, ExternalLink } from 'lucide-react';
+import { Upload, Trash2, Loader2, Image, Copy, Check, Eye, ExternalLink, QrCode } from 'lucide-react';
 import { useToast } from '../components/ui/toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
+import { QRCodeSVG } from 'qrcode.react';
 
 function formatSize(bytes) {
   if (!bytes) return '—';
@@ -21,7 +22,13 @@ export default function MediaPage() {
   const [uploading, setUploading] = useState(false);
   const [copiedId, setCopiedId] = useState(null);
   const [previewFile, setPreviewFile] = useState(null);
+  const [showQr, setShowQr] = useState(false);
   const fileRef = useRef();
+
+  const getShareUrl = (f) => {
+    if (!f) return '';
+    return `${window.location.origin}/api/media/f/${f.file_path || f.original_name}`;
+  };
 
   const files = data?.files || data?.media || [];
 
@@ -109,11 +116,11 @@ export default function MediaPage() {
                     <Eye className="w-4 h-4" />
                   </button>
                   <button
-                    onClick={() => copyUrl(f.url)}
+                    onClick={() => copyUrl(getShareUrl(f))}
                     className="p-1.5 bg-white/20 rounded-lg hover:bg-white/30 text-white"
-                    title="Copy URL"
+                    title="Copy Link Share"
                   >
-                    {copiedId === f.url ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                    {copiedId === getShareUrl(f) ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                   </button>
                   <button
                     onClick={() => handleDelete(f.id)}
@@ -139,20 +146,44 @@ export default function MediaPage() {
       )}
 
       {/* Preview Dialog */}
-      <Dialog open={!!previewFile} onOpenChange={() => setPreviewFile(null)}>
+      <Dialog open={!!previewFile} onOpenChange={(open) => {
+        if (!open) { setPreviewFile(null); setShowQr(false); }
+      }}>
         <DialogContent className="max-w-3xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(26,26,27,1)] p-0 overflow-hidden bg-white/95 backdrop-blur">
           <DialogHeader className="p-4 border-b-2 border-black bg-white">
             <DialogTitle className="font-mono text-sm uppercase flex items-center justify-between">
               <span className="truncate">{previewFile?.file_name || previewFile?.original_name}</span>
-              {previewFile?.url && (
-                <a href={previewFile.url} target="_blank" rel="noopener noreferrer" className="ml-4 text-bauhaus-blue hover:underline flex items-center gap-1 text-xs">
-                  <ExternalLink className="w-3 h-3" /> Buka Tab Baru
-                </a>
-              )}
+              <div className="flex items-center gap-4">
+                <button 
+                  onClick={() => setShowQr(!showQr)} 
+                  className="flex items-center gap-1 text-xs px-2 py-1 bg-black text-white rounded hover:bg-black/80"
+                >
+                  <QrCode className="w-3 h-3" /> {showQr ? 'Tutup QR' : 'Generate QR'}
+                </button>
+                {previewFile && (
+                  <a href={getShareUrl(previewFile)} target="_blank" rel="noopener noreferrer" className="text-bauhaus-blue hover:underline flex items-center gap-1 text-xs font-bold">
+                    <ExternalLink className="w-3 h-3" /> Buka Tab Baru
+                  </a>
+                )}
+              </div>
             </DialogTitle>
           </DialogHeader>
           <div className="p-4 flex items-center justify-center bg-gray-50 min-h-[50vh] relative">
-            {previewFile?.url ? (
+            {showQr && previewFile ? (
+              <div className="flex flex-col items-center justify-center bg-white p-8 rounded-xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(26,26,27,1)]">
+                <QRCodeSVG value={getShareUrl(previewFile)} size={200} />
+                <p className="mt-4 text-xs font-mono break-all max-w-[250px] text-center text-muted-foreground">
+                  {getShareUrl(previewFile)}
+                </p>
+                <button 
+                  onClick={() => copyUrl(getShareUrl(previewFile))}
+                  className="mt-4 flex items-center gap-2 text-xs bg-black text-white px-4 py-2 rounded font-bold hover:bg-black/80"
+                >
+                  {copiedId === getShareUrl(previewFile) ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  Copy Link Share
+                </button>
+              </div>
+            ) : previewFile?.url ? (
               <img 
                 src={previewFile.url} 
                 alt={previewFile.file_name} 
@@ -166,10 +197,12 @@ export default function MediaPage() {
             )}
             
             {/* File Info */}
-            <div className="absolute bottom-4 left-4 bg-white/80 backdrop-blur border border-black text-xs font-mono p-2 shadow-sm rounded-md">
-              <p>Type: {previewFile?.mime_type || previewFile?.file_type}</p>
-              <p>Size: {formatSize(previewFile?.file_size || previewFile?.size)}</p>
-            </div>
+            {!showQr && (
+              <div className="absolute bottom-4 left-4 bg-white/80 backdrop-blur border border-black text-xs font-mono p-2 shadow-sm rounded-md pointer-events-none">
+                <p>Type: {previewFile?.mime_type || previewFile?.file_type}</p>
+                <p>Size: {formatSize(previewFile?.file_size || previewFile?.size)}</p>
+              </div>
+            )}
           </div>
         </DialogContent>
       </Dialog>
