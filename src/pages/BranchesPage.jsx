@@ -446,7 +446,7 @@ function QRTab() {
 
             <div>
               <label className="text-xs font-medium text-muted-foreground mb-1 block">Base URL (opsional)</label>
-              <Input value={form.base_url} onChange={e => setForm(f => ({ ...f, base_url: e.target.value }))} placeholder="http://localhost:5174 (default dari settings)" />
+              <Input value={form.base_url} onChange={e => setForm(f => ({ ...f, base_url: e.target.value }))} placeholder="Otomatis (contoh: https://demo-cafe-baru.caffe.id)" />
             </div>
 
             {/* Radius settings */}
