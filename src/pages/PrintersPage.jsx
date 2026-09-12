@@ -97,7 +97,7 @@ export default function PrintersPage() {
         .center{text-align:center}.bold{font-weight:bold}.div{margin:2px 0;letter-spacing:-1px}
         @media print{@page{margin:0;size:${printer.paper_width==='58mm'?'58mm':'80mm'} auto}}
       </style></head><body>${lines}</body></html>`;
-      await smartPrint(html, printer, res.test_data);
+      await smartPrint(html, printer, test_data);
       toast.success('Print test dikirim ke ' + printer.name);
     } catch (err) { toast.error('Test print gagal: ' + (err.response?.data?.error || err.message)); }
     finally { setTesting(null); }
