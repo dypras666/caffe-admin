@@ -394,24 +394,30 @@ async function writeInChunks(char, data, chunkSize = 100) {
 export async function printViaBluetooth(receipt, printer) {
   if (!navigator.bluetooth) throw new Error('Web Bluetooth tidak didukung');
 
-  const deviceId = printer?.bluetooth_device_id;
-  if (!deviceId) throw new Error('Device ID Bluetooth tidak tersimpan. Scan ulang printer.');
-
-  // Re-request device (required by Web Bluetooth security model)
+  let deviceId = printer?.bluetooth_device_id;
   let device;
-  try {
-    const devices = await navigator.bluetooth.getDevices?.() || [];
-    device = devices.find(d => d.id === deviceId);
-  } catch {}
 
-  if (!device) {
-    // Must request again via user gesture — will open picker pre-filtered
+  if (!deviceId) {
+    // Pick or ask the user
     device = await navigator.bluetooth.requestDevice({
       acceptAllDevices: true,
       optionalServices: BT_PRINTER_SERVICES,
     });
-    if (device.id !== deviceId) {
-      throw new Error('Pilih printer yang sama seperti saat konfigurasi.');
+    deviceId = device.id;
+  } else {
+    try {
+      const devices = await navigator.bluetooth.getDevices?.() || [];
+      device = devices.find(d => d.id === deviceId);
+    } catch {}
+
+    if (!device) {
+      device = await navigator.bluetooth.requestDevice({
+        acceptAllDevices: true,
+        optionalServices: BT_PRINTER_SERVICES,
+      });
+      if (device.id !== deviceId) {
+        throw new Error('Pilih printer yang sama seperti saat konfigurasi.');
+      }
     }
   }
 
@@ -458,20 +464,27 @@ export async function scanUSBPrinters() {
 export async function printViaUSB(receipt, printer) {
   if (!navigator.usb) throw new Error('Web USB tidak didukung');
   
-  const vendorId = printer.usb_vendor_id;
-  const productId = printer.usb_product_id;
+  const vendorId = printer?.usb_vendor_id;
+  const productId = printer?.usb_product_id;
   
+  let device;
   if (!vendorId || !productId) {
-    throw new Error('ID USB Printer tidak valid. Harap scan ulang printer Anda.');
-  }
-
-  const devices = await navigator.usb.getDevices();
-  let device = devices.find(d => d.vendorId === vendorId && d.productId === productId);
-
-  if (!device) {
-    device = await navigator.usb.requestDevice({ filters: [{ classCode: 7 }] });
-    if (device.vendorId !== vendorId || device.productId !== productId) {
-      throw new Error('Pilih printer USB yang sama dengan yang dikonfigurasi.');
+    // Pick the first authorized printer, or ask the user
+    const devices = await navigator.usb.getDevices();
+    const authorized = devices.filter(d => d.deviceClass === 7 || d.deviceVersionMajor !== undefined);
+    if (authorized.length > 0) {
+      device = authorized[0];
+    } else {
+      device = await navigator.usb.requestDevice({ filters: [{ classCode: 7 }] });
+    }
+  } else {
+    const devices = await navigator.usb.getDevices();
+    device = devices.find(d => d.vendorId === vendorId && d.productId === productId);
+    if (!device) {
+      device = await navigator.usb.requestDevice({ filters: [{ classCode: 7 }] });
+      if (device.vendorId !== vendorId || device.productId !== productId) {
+        throw new Error('Pilih printer USB yang sama dengan yang dikonfigurasi.');
+      }
     }
   }
 

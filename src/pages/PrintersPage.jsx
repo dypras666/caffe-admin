@@ -10,7 +10,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '.
 import { smartPrint } from '../lib/printer';
 import {
   Printer, Plus, Pencil, Trash2, Loader2, CheckCircle2,
-  Settings, Wifi, Usb, Monitor, Star, Receipt, Utensils, Coffee, Tag
+  Settings, Wifi, Usb, Monitor, Star, Receipt, Utensils, Coffee, Tag, Bluetooth
 } from 'lucide-react';
 import { useToast } from '../components/ui/toast';
 
@@ -23,6 +23,8 @@ const TYPE_CONFIG = {
 const CONN_CONFIG = {
   browser: { label: 'Browser (window.print)', icon: Monitor },
   network: { label: 'Jaringan (IP:Port)', icon: Wifi },
+  usb: { label: 'USB (API Chrome)', icon: Usb },
+  bluetooth: { label: 'Bluetooth (API Chrome)', icon: Bluetooth },
 };
 
 const EMPTY = {
