@@ -4,7 +4,7 @@ import api from '../lib/api';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
-import { Upload, Trash2, Loader2, Image, Copy, Check, Eye, ExternalLink, QrCode } from 'lucide-react';
+import { Upload, Trash2, Loader2, Image, Copy, Check, Eye, ExternalLink, QrCode, FileText } from 'lucide-react';
 import { useToast } from '../components/ui/toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { QRCodeSVG } from 'qrcode.react';
@@ -27,7 +27,7 @@ export default function MediaPage() {
 
   const getShareUrl = (f) => {
     if (!f) return '';
-    return `${window.location.origin}/api/media/f/${f.file_path || f.original_name}`;
+    return `${window.location.origin}/m/${f.file_path || f.original_name}`;
   };
 
   const files = data?.files || data?.media || [];
@@ -72,24 +72,28 @@ export default function MediaPage() {
       <div className="flex items-center gap-3">
         <span className="text-sm text-muted-foreground">{files.length} file</span>
         <div className="ml-auto">
-          <input ref={fileRef} type="file" multiple accept="image/*" className="hidden" onChange={handleUpload} />
+          <input ref={fileRef} type="file" multiple accept="image/*,.pdf,.doc,.docx,.ppt,.pptx" className="hidden" onChange={handleUpload} />
           <Button onClick={() => fileRef.current?.click()} disabled={uploading} className="gap-1.5">
             {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-            {uploading ? 'Mengupload...' : 'Upload Gambar'}
+            Upload File
           </Button>
         </div>
       </div>
 
-      {/* Drop zone */}
-      <div
-        className="border-2 border-dashed border-border rounded-xl p-8 text-center cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-colors"
+      {/* Drag & drop area */}
+      <div 
+        className={cn(
+          "border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors mb-6",
+          dragging ? "border-primary bg-primary/5" : "border-muted-foreground/20 hover:border-primary/50"
+        )}
+        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={handleDrop}
         onClick={() => fileRef.current?.click()}
-        onDragOver={e => e.preventDefault()}
-        onDrop={e => { e.preventDefault(); fileRef.current.files = e.dataTransfer.files; handleUpload({ target: fileRef.current }); }}
       >
         <Image className="w-10 h-10 text-muted-foreground/40 mx-auto mb-3" />
-        <p className="text-sm font-medium text-muted-foreground">Klik atau drop gambar di sini</p>
-        <p className="text-xs text-muted-foreground/60 mt-1">JPG, PNG, WebP, GIF hingga 5MB</p>
+        <p className="text-sm font-medium text-muted-foreground">Klik atau drop file di sini</p>
+        <p className="text-xs text-muted-foreground/60 mt-1">Image, PDF, Word, PPT hingga 20MB</p>
       </div>
 
       {loading ? (
@@ -99,8 +103,13 @@ export default function MediaPage() {
           {files.map(f => (
             <Card key={f.id} className="overflow-hidden group">
               <div className="aspect-square bg-secondary relative">
-                {f.url ? (
+                {f.url && f.mime_type?.startsWith('image/') ? (
                   <img src={f.url} alt={f.file_name} className="w-full h-full object-cover" loading="lazy" />
+                ) : f.url ? (
+                  <div className="w-full h-full flex flex-col items-center justify-center bg-gray-100">
+                    <FileText className="w-8 h-8 text-muted-foreground/60 mb-1" />
+                    <span className="text-[10px] font-mono font-bold uppercase text-muted-foreground">{f.file_type || 'DOC'}</span>
+                  </div>
                 ) : (
                   <div className="w-full h-full flex items-center justify-center">
                     <Image className="w-8 h-8 text-muted-foreground/30" />
@@ -150,10 +159,10 @@ export default function MediaPage() {
         if (!open) { setPreviewFile(null); setShowQr(false); }
       }}>
         <DialogContent className="max-w-3xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(26,26,27,1)] p-0 overflow-hidden bg-white/95 backdrop-blur">
-          <DialogHeader className="p-4 border-b-2 border-black bg-white">
-            <DialogTitle className="font-mono text-sm uppercase flex items-center justify-between">
+          <DialogHeader className="p-4 border-b-2 border-black bg-white pr-10">
+            <DialogTitle className="font-mono text-sm uppercase flex items-center justify-between gap-4">
               <span className="truncate">{previewFile?.file_name || previewFile?.original_name}</span>
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-4 shrink-0">
                 <button 
                   onClick={() => setShowQr(!showQr)} 
                   className="flex items-center gap-1 text-xs px-2 py-1 bg-black text-white rounded hover:bg-black/80"
@@ -183,12 +192,20 @@ export default function MediaPage() {
                   Copy Link Share
                 </button>
               </div>
-            ) : previewFile?.url ? (
+            ) : previewFile?.url && previewFile?.mime_type?.startsWith('image/') ? (
               <img 
                 src={previewFile.url} 
                 alt={previewFile.file_name} 
                 className="max-w-full max-h-[70vh] object-contain shadow-md"
               />
+            ) : previewFile?.url ? (
+              <div className="flex flex-col items-center justify-center p-12 bg-white rounded-xl shadow-sm border border-black max-w-sm w-full">
+                <FileText className="w-24 h-24 text-muted-foreground/30 mb-6" />
+                <p className="text-sm font-mono text-center font-bold">{previewFile.file_name || previewFile.original_name}</p>
+                <a href={getShareUrl(previewFile)} target="_blank" rel="noopener noreferrer" className="mt-4 px-4 py-2 bg-black text-white rounded text-xs hover:bg-black/80 inline-flex items-center gap-2">
+                  <ExternalLink className="w-4 h-4" /> Buka Dokumen
+                </a>
+              </div>
             ) : (
               <div className="flex flex-col items-center text-muted-foreground">
                 <Image className="w-12 h-12 mb-2 opacity-50" />
