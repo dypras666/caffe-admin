@@ -26,6 +26,16 @@ export default function MediaPage() {
   const [showQr, setShowQr] = useState(false);
   const fileRef = useRef();
 
+  const [dragging, setDragging] = useState(false);
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleUpload({ target: { files: e.dataTransfer.files } });
+    }
+  };
+
   const getShareUrl = (f) => {
     if (!f) return '';
     return `${window.location.origin}/m/${f.file_path || f.original_name}`;
