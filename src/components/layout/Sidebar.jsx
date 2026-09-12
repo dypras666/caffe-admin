@@ -98,7 +98,6 @@ function buildNavGroups(settings = {}) {
     items: [
       { to: '/printers',  icon: Printer, label: 'Printer',  adminOnly: true },
       { to: '/stations',  icon: ChefHat, label: 'Stasiun',  adminOnly: true },
-      { to: '/media',     icon: Image,   label: 'Media',    adminOnly: true },
     ],
   },
   {
