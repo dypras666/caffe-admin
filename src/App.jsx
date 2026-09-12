@@ -40,6 +40,7 @@ import PostsPage from './pages/PostsPage';
 import RolesPage from './pages/RolesPage';
 import VouchersPage from './pages/VouchersPage';
 import BackupPage from './pages/BackupPage';
+import NavigationPage from './pages/NavigationPage';
 
 function RequireAuth({ children }) {
   const { user, loading } = useAuth();
@@ -98,6 +99,7 @@ function AppRoutes() {
         <Route path="roles" element={<RequireAdmin><RolesPage /></RequireAdmin>} />
         <Route path="vouchers" element={<RequireAdmin><VouchersPage /></RequireAdmin>} />
         <Route path="backup" element={<RequireAdmin><BackupPage /></RequireAdmin>} />
+        <Route path="navigation" element={<RequireAdmin><NavigationPage /></RequireAdmin>} />
       </Route>
       <Route path="/display/:stationCode" element={<RequireAuth><StationDisplayPage /></RequireAuth>} />
       <Route path="*" element={<Navigate to="/" replace />} />
