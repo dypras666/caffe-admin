@@ -129,7 +129,6 @@ function buildNavGroups(settings = {}) {
     items: [
       { to: '/posts',   icon: FileText, label: 'Post & Halaman', adminOnly: true },
       { to: '/media',   icon: Image,    label: 'Galeri Media',    adminOnly: true },
-      { to: '/categories', icon: Tag,   label: 'Kategori',        adminOnly: true },
     ],
   },
   {
