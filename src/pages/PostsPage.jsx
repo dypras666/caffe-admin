@@ -238,6 +238,7 @@ export default function PostsPage() {
 
   const handleSave = async (e) => {
     e.preventDefault();
+    if (saving) return;
     setSaving(true);
     try {
       const payload = {
