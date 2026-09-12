@@ -7,7 +7,8 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '.
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { Input } from '../components/ui/input';
-import { Loader2, RefreshCw, ChevronLeft, ChevronRight, Check, X, Plus, Banknote } from 'lucide-react';
+import { ServerSelect } from '../components/ui/server-select';
+import { Loader2, RefreshCw, ChevronLeft, ChevronRight, Check, X, Plus, Banknote, Utensils, Trash2 } from 'lucide-react';
 
 const STATUS_OPTIONS = ['all', 'pending', 'confirmed', 'cancelled', 'completed'];
 const STATUS_LABEL = { pending: 'Pending', confirmed: 'Dikonfirmasi', cancelled: 'Dibatalkan', completed: 'Selesai' };
@@ -22,8 +23,12 @@ export default function BookingsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState({
-    name: '', email: '', phone: '', booking_date: '', booking_time: '', guests: 1, special_request: ''
+    name: '', email: '', phone: '', booking_date: '', booking_time: '', guests: 1, branch_id: '', special_request: '', items: []
   });
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [itemQty, setItemQty] = useState(1);
+  const [itemsModalOpen, setItemsModalOpen] = useState(false);
+  const [bookingItems, setBookingItems] = useState([]);
 
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [selectedBooking, setSelectedBooking] = useState(null);
@@ -55,12 +60,41 @@ export default function BookingsPage() {
     try {
       await api.post('/bookings', form);
       setIsModalOpen(false);
-      setForm({ name: '', email: '', phone: '', booking_date: '', booking_time: '', guests: 1, special_request: '' });
+      setForm({ name: '', email: '', phone: '', booking_date: '', booking_time: '', guests: 1, special_request: '', items: [] });
       refetch();
     } catch (err) {
       alert(err.response?.data?.error || 'Gagal membuat booking');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const addItemToForm = () => {
+    if (!selectedProduct) return;
+    setForm(p => ({
+      ...p,
+      items: [...p.items, {
+        product_id: selectedProduct.id,
+        product_name: selectedProduct.name,
+        unit_price: selectedProduct.price,
+        quantity: itemQty
+      }]
+    }));
+    setSelectedProduct(null);
+    setItemQty(1);
+  };
+
+  const removeItem = (idx) => {
+    setForm(p => ({ ...p, items: p.items.filter((_, i) => i !== idx) }));
+  };
+
+  const viewItems = async (id) => {
+    try {
+      const res = await api.get(`/bookings/${id}/items`);
+      setBookingItems(res.data || []);
+      setItemsModalOpen(true);
+    } catch (e) {
+      alert('Gagal mengambil detail menu');
     }
   };
 
@@ -201,6 +235,10 @@ export default function BookingsPage() {
                           onClick={() => openPaymentModal(b)} title="Pembayaran">
                           <Banknote className="w-4 h-4" />
                         </Button>
+                        <Button variant="ghost" size="icon" className="text-orange-600 hover:bg-orange-50"
+                          onClick={() => viewItems(b.id)} title="Lihat Menu Pre-Order">
+                          <Utensils className="w-4 h-4" />
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -261,6 +299,40 @@ export default function BookingsPage() {
               <label className="text-sm font-medium">Permintaan Khusus</label>
               <Input value={form.special_request} onChange={e => setForm(p => ({...p, special_request: e.target.value}))} placeholder="Opsional (cth: Di pojok)" />
             </div>
+            <div className="grid gap-2">
+              <label className="text-sm font-medium">Pre-Order Menu (Opsional)</label>
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <ServerSelect
+                    endpoint="/products"
+                    value={selectedProduct?.id?.toString() || ''}
+                    displayValue={selectedProduct?.name || ''}
+                    onChange={(val, item) => setSelectedProduct(item)}
+                    placeholder="Pilih Menu..."
+                  />
+                </div>
+                <Input type="number" min="1" className="w-20" value={itemQty} onChange={e => setItemQty(parseInt(e.target.value) || 1)} />
+                <Button type="button" variant="secondary" onClick={addItemToForm}>Tambah</Button>
+              </div>
+              {form.items.length > 0 && (
+                <div className="mt-2 border rounded-md divide-y text-sm">
+                  {form.items.map((item, idx) => (
+                    <div key={idx} className="flex justify-between p-2 items-center">
+                      <span>{item.quantity}x {item.product_name}</span>
+                      <div className="flex items-center gap-4">
+                        <span className="text-muted-foreground">Rp {(item.quantity * item.unit_price).toLocaleString('id')}</span>
+                        <Button type="button" variant="ghost" size="icon" className="h-6 w-6 text-red-500" onClick={() => removeItem(idx)}>
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                  <div className="p-2 font-semibold text-right bg-muted/30">
+                    Total: Rp {form.items.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0).toLocaleString('id')}
+                  </div>
+                </div>
+              )}
+            </div>
             <div className="flex justify-end gap-2 pt-4">
               <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>Batal</Button>
               <Button type="submit" disabled={submitting}>
@@ -309,6 +381,35 @@ export default function BookingsPage() {
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={itemsModalOpen} onOpenChange={setItemsModalOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Detail Pre-Order Menu</DialogTitle>
+          </DialogHeader>
+          <div className="mt-4">
+            {bookingItems.length === 0 ? (
+              <p className="text-center text-muted-foreground py-8">Tidak ada menu yang dipesan.</p>
+            ) : (
+              <div className="space-y-3">
+                {bookingItems.map(item => (
+                  <div key={item.id} className="flex justify-between items-center border-b pb-2 last:border-0">
+                    <div>
+                      <p className="font-medium">{item.product_name}</p>
+                      <p className="text-xs text-muted-foreground">{item.quantity} x Rp {Number(item.unit_price).toLocaleString('id')}</p>
+                    </div>
+                    <p className="font-semibold">Rp {Number(item.subtotal).toLocaleString('id')}</p>
+                  </div>
+                ))}
+                <div className="flex justify-between items-center pt-2 border-t font-bold">
+                  <span>Total Harga Menu</span>
+                  <span>Rp {bookingItems.reduce((sum, item) => sum + Number(item.subtotal), 0).toLocaleString('id')}</span>
+                </div>
+              </div>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </div>

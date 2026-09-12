@@ -21,7 +21,7 @@ export default function MediaPage() {
   const [copiedId, setCopiedId] = useState(null);
   const fileRef = useRef();
 
-  const files = data?.media || [];
+  const files = data?.files || data?.media || [];
 
   const handleUpload = async (e) => {
     const selected = Array.from(e.target.files);
