@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { useFetch } from '../hooks/useApi';
 import api from '../lib/api';
 import { Card, CardContent } from '../components/ui/card';
+import { cn } from "../lib/utils";
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Upload, Trash2, Loader2, Image, Copy, Check, Eye, ExternalLink, QrCode, FileText } from 'lucide-react';
