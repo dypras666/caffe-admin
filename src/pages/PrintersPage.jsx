@@ -10,15 +10,15 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '.
 import { smartPrint } from '../lib/printer';
 import {
   Printer, Plus, Pencil, Trash2, Loader2, CheckCircle2,
-  Settings, Wifi, Usb, Monitor, Star
+  Settings, Wifi, Usb, Monitor, Star, Receipt, Utensils, Coffee, Tag
 } from 'lucide-react';
 import { useToast } from '../components/ui/toast';
 
 const TYPE_CONFIG = {
-  receipt: { label: 'Struk Kasir', color: 'bg-blue-100 text-blue-700', icon: '🧾' },
-  kitchen: { label: 'Dapur', color: 'bg-orange-100 text-orange-700', icon: '🍳' },
-  bar: { label: 'Bar', color: 'bg-purple-100 text-purple-700', icon: '🍹' },
-  label: { label: 'Label', color: 'bg-green-100 text-green-700', icon: '🏷️' },
+  receipt: { label: 'Struk Kasir', color: 'bg-blue-100 text-blue-700', icon: Receipt },
+  kitchen: { label: 'Dapur', color: 'bg-orange-100 text-orange-700', icon: Utensils },
+  bar: { label: 'Bar', color: 'bg-purple-100 text-purple-700', icon: Coffee },
+  label: { label: 'Label', color: 'bg-green-100 text-green-700', icon: Tag },
 };
 const CONN_CONFIG = {
   browser: { label: 'Browser (window.print)', icon: Monitor },
@@ -121,8 +121,8 @@ export default function PrintersPage() {
                 {/* Header */}
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-3">
-                    <div className="w-11 h-11 rounded-xl bg-secondary flex items-center justify-center text-2xl">
-                      {tc.icon}
+                    <div className="w-11 h-11 rounded-xl bg-secondary flex items-center justify-center text-muted-foreground">
+                      <tc.icon className="w-5 h-5" />
                     </div>
                     <div>
                       <div className="flex items-center gap-1.5">
@@ -202,7 +202,17 @@ export default function PrintersPage() {
                 <Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {Object.entries(TYPE_CONFIG).map(([k, v]) => <SelectItem key={k} value={k}>{v.icon} {v.label}</SelectItem>)}
+                    {Object.entries(TYPE_CONFIG).map(([k, v]) => {
+                      const Icon = v.icon;
+                      return (
+                        <SelectItem key={k} value={k}>
+                          <div className="flex items-center gap-2">
+                            <Icon className="w-4 h-4 text-muted-foreground" />
+                            <span>{v.label}</span>
+                          </div>
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
               </div>
