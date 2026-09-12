@@ -10,7 +10,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '.
 import { smartPrint } from '../lib/printer';
 import {
   Printer, Plus, Pencil, Trash2, Loader2, CheckCircle2,
-  Settings, Wifi, Usb, Monitor, Star, Receipt, Utensils, Coffee, Tag, Bluetooth
+  Settings, Wifi, Usb, Monitor, Star, Receipt, Utensils, Coffee, Tag, Bluetooth, Search
 } from 'lucide-react';
 import { useToast } from '../components/ui/toast';
 
@@ -54,6 +54,9 @@ export default function PrintersPage() {
       is_active: !!p.is_active, auto_cut: !!p.auto_cut,
       header_text: p.header_text || '', footer_text: p.footer_text || '',
       sort_order: p.sort_order || 0,
+      bluetooth_device_id: p.bluetooth_device_id || null,
+      usb_vendor_id: p.usb_vendor_id || null,
+      usb_product_id: p.usb_product_id || null,
     });
     setEditId(p.id);
     setOpen(true);
@@ -228,6 +231,49 @@ export default function PrintersPage() {
                 </Select>
               </div>
             </div>
+
+            {/* API Chrome settings */}
+            {(form.connection === 'bluetooth' || form.connection === 'usb') && (
+              <div className="p-3 bg-secondary/30 rounded-lg space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground block">ID Perangkat Chrome API</label>
+                    <p className="text-[10px] text-muted-foreground/70">Wajib di-scan agar bisa tersimpan.</p>
+                  </div>
+                  <Button type="button" size="sm" variant="outline" className="h-7 text-xs" onClick={async () => {
+                    try {
+                      let found;
+                      if (form.connection === 'bluetooth') {
+                        const { scanBluetoothPrinters } = await import('../lib/printer');
+                        found = await scanBluetoothPrinters();
+                      } else {
+                        const { scanUSBPrinters } = await import('../lib/printer');
+                        found = await scanUSBPrinters();
+                      }
+                      if (found) {
+                        setForm(f => ({
+                          ...f,
+                          name: f.name || found.name,
+                          bluetooth_device_id: found.bluetooth_device_id || null,
+                          usb_vendor_id: found.usb_vendor_id || null,
+                          usb_product_id: found.usb_product_id || null,
+                        }));
+                        toast.success('Printer berhasil di-scan!');
+                      }
+                    } catch (e) {
+                      toast.error(e.message);
+                    }
+                  }}>
+                    <Search className="w-3.5 h-3.5 mr-1" /> Scan Printer
+                  </Button>
+                </div>
+                {(form.bluetooth_device_id || form.usb_vendor_id) && (
+                  <div className="bg-success/10 text-success text-[10px] px-2 py-1 rounded font-mono break-all">
+                    ID: {form.bluetooth_device_id || `${form.usb_vendor_id}:${form.usb_product_id}`}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Network settings */}
             {form.connection === 'network' && (
