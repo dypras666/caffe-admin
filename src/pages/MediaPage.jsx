@@ -4,8 +4,9 @@ import api from '../lib/api';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
-import { Upload, Trash2, Loader2, Image, Copy, Check } from 'lucide-react';
+import { Upload, Trash2, Loader2, Image, Copy, Check, Eye, ExternalLink } from 'lucide-react';
 import { useToast } from '../components/ui/toast';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 
 function formatSize(bytes) {
   if (!bytes) return '—';
@@ -19,6 +20,7 @@ export default function MediaPage() {
   const { data, loading, refetch } = useFetch('/media');
   const [uploading, setUploading] = useState(false);
   const [copiedId, setCopiedId] = useState(null);
+  const [previewFile, setPreviewFile] = useState(null);
   const fileRef = useRef();
 
   const files = data?.files || data?.media || [];
@@ -100,6 +102,13 @@ export default function MediaPage() {
                 {/* Overlay on hover */}
                 <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
                   <button
+                    onClick={() => setPreviewFile(f)}
+                    className="p-1.5 bg-white/20 rounded-lg hover:bg-white/30 text-white"
+                    title="Preview Gambar"
+                  >
+                    <Eye className="w-4 h-4" />
+                  </button>
+                  <button
                     onClick={() => copyUrl(f.url)}
                     className="p-1.5 bg-white/20 rounded-lg hover:bg-white/30 text-white"
                     title="Copy URL"
@@ -128,6 +137,42 @@ export default function MediaPage() {
           )}
         </div>
       )}
+
+      {/* Preview Dialog */}
+      <Dialog open={!!previewFile} onOpenChange={() => setPreviewFile(null)}>
+        <DialogContent className="max-w-3xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(26,26,27,1)] p-0 overflow-hidden bg-white/95 backdrop-blur">
+          <DialogHeader className="p-4 border-b-2 border-black bg-white">
+            <DialogTitle className="font-mono text-sm uppercase flex items-center justify-between">
+              <span className="truncate">{previewFile?.file_name || previewFile?.original_name}</span>
+              {previewFile?.url && (
+                <a href={previewFile.url} target="_blank" rel="noopener noreferrer" className="ml-4 text-bauhaus-blue hover:underline flex items-center gap-1 text-xs">
+                  <ExternalLink className="w-3 h-3" /> Buka Tab Baru
+                </a>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="p-4 flex items-center justify-center bg-gray-50 min-h-[50vh] relative">
+            {previewFile?.url ? (
+              <img 
+                src={previewFile.url} 
+                alt={previewFile.file_name} 
+                className="max-w-full max-h-[70vh] object-contain shadow-md"
+              />
+            ) : (
+              <div className="flex flex-col items-center text-muted-foreground">
+                <Image className="w-12 h-12 mb-2 opacity-50" />
+                <p>Gambar tidak tersedia</p>
+              </div>
+            )}
+            
+            {/* File Info */}
+            <div className="absolute bottom-4 left-4 bg-white/80 backdrop-blur border border-black text-xs font-mono p-2 shadow-sm rounded-md">
+              <p>Type: {previewFile?.mime_type || previewFile?.file_type}</p>
+              <p>Size: {formatSize(previewFile?.file_size || previewFile?.size)}</p>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
