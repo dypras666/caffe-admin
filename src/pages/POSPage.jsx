@@ -557,7 +557,7 @@ export default function POSPage() {
 
           {/* Category pills */}
           <div className="flex gap-2 overflow-x-auto scrollbar-none pb-0.5">
-            {[{ id: 'all', name: 'Semua' }, ...categories.filter(c => c.is_active)].map(cat => (
+            {[{ id: 'all', name: 'Semua' }, { id: 'promo', name: 'Promo' }, ...categories.filter(c => c.is_active)].map(cat => (
               <button
                 key={cat.id}
                 onClick={() => setActiveCategory(String(cat.id))}
@@ -605,19 +605,7 @@ export default function POSPage() {
             </div>
           ) : (
             <div className="flex flex-col gap-6">
-              {/* Slider Promo */}
-              {promoProducts.length > 0 && activeCategory === 'all' && !debouncedSearch && (
-                <div>
-                  <h3 className="font-semibold text-sm mb-2.5 flex items-center gap-1.5 text-red-600"><Ticket className="w-4 h-4" /> Sedang Promo</h3>
-                  <div className="flex gap-3 overflow-x-auto pb-3 scrollbar-hide snap-x">
-                    {promoProducts.map(product => (
-                      <div key={product.id} className="w-32 sm:w-36 md:w-40 shrink-0 snap-start">
-                        {renderProductCard(product, product.promoLabel, product.promoValidTo)}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+              {/* Slider Promo Removed in favor of Promo tab */}
 
               {/* Slider Terlaris */}
               {popularProducts.length > 0 && activeCategory === 'all' && !debouncedSearch && (
@@ -635,11 +623,13 @@ export default function POSPage() {
 
               {/* Main Grid */}
               <div>
-                {(promoProducts.length > 0 || popularProducts.length > 0) && activeCategory === 'all' && !debouncedSearch && (
+                {popularProducts.length > 0 && activeCategory === 'all' && !debouncedSearch && (
                   <h3 className="font-semibold text-sm mb-3 flex items-center gap-1.5"><Store className="w-4 h-4 text-primary" /> Semua Produk</h3>
                 )}
                 <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-3">
-                  {products.map(product => renderProductCard(product))}
+                  {(activeCategory === 'promo' ? promoProducts : products).map(product => 
+                    renderProductCard(product, product.promoLabel, product.promoValidTo)
+                  )}
                 </div>
               </div>
             </div>
