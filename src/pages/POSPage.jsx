@@ -248,15 +248,13 @@ export default function POSPage() {
   };
   const calcItemTotal = (item) => {
     const base = item.unitPrice + (item.addonsPerUnit || 0);
-    const manualDisc = parseFloat(item.itemDiscount || 0);
     const disc = itemDiscountMap[item.id];
-    if (!disc) return Math.max(0, base - manualDisc) * item.qty;
+    if (!disc) return base * item.qty;
     const maxQty = disc.max_qty || item.qty;
     const discQty = Math.min(item.qty, maxQty);
     const fullQty = item.qty - discQty;
-    const discUnit = Math.max(0, calcDiscountedPrice(base, disc) - manualDisc);
-    const fullUnit = Math.max(0, base - manualDisc);
-    return discUnit * discQty + fullUnit * fullQty;
+    const discUnit = calcDiscountedPrice(base, disc);
+    return (discUnit * discQty) + (base * fullQty);
   };
   const subtotal    = cart.reduce((s, i) => s + calcItemTotal(i), 0);
   const discountAmt = parseFloat(discount || 0);
@@ -677,7 +675,6 @@ export default function POSPage() {
           itemDiscountMap={itemDiscountMap}
           calcItemTotal={calcItemTotal}
           calcDiscountedPrice={calcDiscountedPrice}
-          onItemDiscountChange={(key, val) => setCart(c => c.map(i => i.cartKey === key ? { ...i, itemDiscount: val } : i))}
         />
       </div>
 
@@ -739,7 +736,6 @@ export default function POSPage() {
                   itemDiscountMap={itemDiscountMap}
                   calcItemTotal={calcItemTotal}
                   calcDiscountedPrice={calcDiscountedPrice}
-                  onItemDiscountChange={(key, val) => setCart(c => c.map(i => i.cartKey === key ? { ...i, itemDiscount: val } : i))}
                 />
               </div>
             </div>
@@ -809,7 +805,7 @@ function CartPanel({
   pointsPreview, onClaimPoints, claimingPoints,
   currency, isMobile,
   appliedVoucher, onVoucherApplied, onVoucherRemove,
-  itemDiscountMap, calcItemTotal, calcDiscountedPrice, onItemDiscountChange,
+  itemDiscountMap, calcItemTotal, calcDiscountedPrice,
 }) {
   // Estimasi poin untuk transaksi berjalan (dari settings global, kasar)
   const estPoints = selectedMember && total > 0 && !lastOrder ? null : null; // handled server-side after order
@@ -890,7 +886,6 @@ function CartPanel({
                 voucherDiscount={itemDiscountMap?.[item.id]}
                 calcItemTotal={calcItemTotal}
                 calcDiscountedPrice={calcDiscountedPrice}
-                onItemDiscountChange={(val) => onItemDiscountChange(item.cartKey, val)}
               />
             ))}
           </div>
@@ -1427,11 +1422,10 @@ function ScanMemberDialog({ open, onClose, onSelect, fmt }) {
 }
 
 // ─── Cart Item ────────────────────────────────────────────────
-function CartItem({ item, fmt, onQtyChange, onRemove, onNoteChange, voucherDiscount, calcItemTotal, calcDiscountedPrice, onItemDiscountChange }) {
+function CartItem({ item, fmt, onQtyChange, onRemove, onNoteChange, voucherDiscount, calcItemTotal, calcDiscountedPrice }) {
   const [showNote, setShowNote] = useState(false);
   
   const baseUnit = item.unitPrice + (item.addonsPerUnit || 0);
-  const manualDisc = parseFloat(item.itemDiscount || 0);
   const discountedUnit = voucherDiscount ? calcDiscountedPrice(baseUnit, voucherDiscount) : baseUnit;
   
   const hasVoucher = voucherDiscount && discountedUnit < baseUnit;
@@ -1439,11 +1433,10 @@ function CartItem({ item, fmt, onQtyChange, onRemove, onNoteChange, voucherDisco
   const discQty = hasVoucher ? Math.min(item.qty, maxQty) : 0;
   const fullQty = item.qty - discQty;
   
-  const lineTotal = calcItemTotal ? calcItemTotal(item) : (baseUnit - manualDisc) * item.qty;
-  const hasManualDisc = manualDisc > 0;
+  const lineTotal = calcItemTotal ? calcItemTotal(item) : baseUnit * item.qty;
 
   return (
-    <div className={cn('bg-background rounded-xl border p-2.5 group', (hasVoucher || hasManualDisc) && 'border-red-200 bg-red-50/30')}>
+    <div className={cn('bg-background rounded-xl border p-2.5 group', hasVoucher && 'border-red-200 bg-red-50/30')}>
       {hasVoucher && (
         <div className="flex items-center gap-1 mb-1">
           <Tag className="w-3 h-3 text-red-500" />
@@ -1459,16 +1452,15 @@ function CartItem({ item, fmt, onQtyChange, onRemove, onNoteChange, voucherDisco
             {hasVoucher && discQty > 0 && (
                <div className="flex items-center gap-1.5">
                  <span className="text-[10px] text-muted-foreground line-through">{fmt(baseUnit)}</span>
-                 <span className="text-xs text-red-600 font-bold">{fmt(Math.max(0, discountedUnit - manualDisc))}</span>
+                 <span className="text-xs text-red-600 font-bold">{fmt(Math.max(0, discountedUnit))}</span>
                  {item.qty > 1 && <span className="text-[10px] text-red-500 font-medium">x {discQty}</span>}
                </div>
             )}
             {/* Full price breakdown (for items exceeding voucher limit, or no voucher) */}
             {fullQty > 0 && (
                <div className="flex items-center gap-1.5">
-                 {hasManualDisc && <span className="text-[10px] text-muted-foreground line-through">{fmt(baseUnit)}</span>}
-                 <span className={cn("text-xs font-medium", hasManualDisc ? "text-red-600 font-bold" : "text-primary")}>
-                   {fmt(Math.max(0, baseUnit - manualDisc))}
+                 <span className={cn("text-xs font-medium", "text-primary")}>
+                   {fmt(Math.max(0, baseUnit))}
                  </span>
                  {item.qty > 1 && hasVoucher && <span className="text-[10px] text-muted-foreground font-medium">x {fullQty} (Normal)</span>}
                </div>
@@ -1515,14 +1507,13 @@ function CartItem({ item, fmt, onQtyChange, onRemove, onNoteChange, voucherDisco
           className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-0.5 transition-colors"
         >
           <Plus className="w-2.5 h-2.5" />
-          {item.notes || item.itemDiscount ? 'Edit Catatan / Diskon' : 'Catatan / Diskon'}
+          {item.notes ? 'Edit Catatan' : 'Catatan'}
         </button>
         <div className="flex flex-col items-end">
-          <span className={cn('text-xs font-bold', (hasVoucher || hasManualDisc) && 'text-red-600')}>{fmt(lineTotal)}</span>
-          {(item.notes || item.itemDiscount) && !showNote && (
+          <span className={cn('text-xs font-bold', hasVoucher && 'text-red-600')}>{fmt(lineTotal)}</span>
+          {item.notes && !showNote && (
             <div className="text-[10px] text-muted-foreground flex flex-col items-end mt-0.5">
-              {item.notes && <span className="truncate max-w-[150px]">"{item.notes}"</span>}
-              {item.itemDiscount && <span className="text-red-500 font-medium">Diskon: {fmt(item.itemDiscount)}/item</span>}
+              <span className="truncate max-w-[150px]">"{item.notes}"</span>
             </div>
           )}
         </div>
@@ -1536,16 +1527,6 @@ function CartItem({ item, fmt, onQtyChange, onRemove, onNoteChange, voucherDisco
               placeholder="Cth: Jangan terlalu pedas..."
               value={item.notes}
               onChange={e => onNoteChange(e.target.value)}
-              className="h-7 text-xs bg-background"
-            />
-          </div>
-          <div>
-            <label className="text-[10px] font-semibold text-muted-foreground mb-1 block">Diskon Manual / Item (Rp)</label>
-            <Input
-              type="number"
-              placeholder="0"
-              value={item.itemDiscount || ''}
-              onChange={e => onItemDiscountChange(e.target.value)}
               className="h-7 text-xs bg-background"
             />
           </div>
