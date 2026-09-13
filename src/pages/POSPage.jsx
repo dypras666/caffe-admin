@@ -119,7 +119,7 @@ export default function POSPage() {
   // Data
   const debouncedSearch = useDebounce(search, 350);
   const branchQs = currentUser?.branch_id ? `&branch_id=${currentUser.branch_id}` : '';
-  const qs = `/products?limit=200${activeCategory !== 'all' ? `&category=${activeCategory}` : ''}${debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ''}${branchQs}`;
+  const qs = `/products?limit=200${(activeCategory !== 'all' && activeCategory !== 'promo') ? `&category=${activeCategory}` : ''}${debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ''}${branchQs}`;
   const { data: productsData, loading: loadingProducts } = useFetch(qs);
   const { data: catData }      = useFetch('/categories');
   const { data: payData }      = useFetch('/payments/methods');
