@@ -32,6 +32,7 @@ const EMPTY = {
   min_transaction: '', branch_id: '', member_only: false,
   usage_limit: '', usage_per_member: '1',
   valid_from: '', valid_until: '',
+  applicable_products: [],
 };
 
 function formatValue(v) {
@@ -55,8 +56,10 @@ export default function VouchersPage() {
 
   const { data, loading, refetch } = useFetch(`/vouchers${search ? `?search=${encodeURIComponent(search)}` : ''}`);
   const { data: branchData } = useFetch('/branches');
+  const { data: prodData } = useFetch('/products?status=active');
   const vouchers = data?.vouchers || [];
   const branches = branchData?.branches || [];
+  const allProducts = prodData?.products || [];
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -85,6 +88,7 @@ export default function VouchersPage() {
       usage_per_member: String(v.usage_per_member || 1),
       valid_from: v.valid_from ? v.valid_from.slice(0, 10) : '',
       valid_until: v.valid_until ? v.valid_until.slice(0, 10) : '',
+      applicable_products: v.applicable_products || [],
     });
     setFreeProduct(v.free_product_id ? { id: v.free_product_id, name: v.free_product_name || '' } : null);
     setOpen(true);
@@ -294,6 +298,35 @@ export default function VouchersPage() {
                       onChange={e => set('max_discount', e.target.value)} placeholder="Kosong = tidak ada batas" />
                   </div>
                 )}
+              </div>
+            )}
+            
+            {/* Conditional: item discount products */}
+            {form.type === 'item_discount' && (
+              <div className="space-y-2 p-3 bg-muted/40 rounded-lg">
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Pilih Produk yang Didiskon (Opsional)</label>
+                <div className="max-h-40 overflow-y-auto border rounded-md p-2 bg-background space-y-1">
+                  {allProducts.map(p => {
+                    const checked = form.applicable_products?.includes(p.id);
+                    return (
+                      <label key={p.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 p-1 rounded">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => {
+                            const newArr = e.target.checked 
+                              ? [...(form.applicable_products || []), p.id]
+                              : (form.applicable_products || []).filter(id => id !== p.id);
+                            set('applicable_products', newArr);
+                          }}
+                        />
+                        {p.name} <span className="text-muted-foreground text-xs">(Rp {p.price})</span>
+                      </label>
+                    );
+                  })}
+                  {allProducts.length === 0 && <div className="text-xs text-muted-foreground p-2">Loading produk...</div>}
+                </div>
+                <p className="text-[10px] text-muted-foreground">Jika tidak ada yang dipilih, diskon berlaku untuk semua produk (namun tetap dihitung per item).</p>
               </div>
             )}
 

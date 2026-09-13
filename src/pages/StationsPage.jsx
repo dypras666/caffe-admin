@@ -18,21 +18,22 @@ import { useToast } from '../components/ui/toast';
 // ── constants ──────────────────────────────────────────────────────────────
 
 const TYPE_CONFIG = {
-  dapur:   { label: 'Dapur',   icon: ChefHat,   color: 'bg-orange-100 text-orange-700 border-orange-200' },
+  kitchen: { label: 'Dapur',   icon: ChefHat,   color: 'bg-orange-100 text-orange-700 border-orange-200' },
   bar:     { label: 'Bar',     icon: GlassWater, color: 'bg-purple-100 text-purple-700 border-purple-200' },
-  kasir:   { label: 'Kasir',   icon: Monitor,    color: 'bg-blue-100 text-blue-700 border-blue-200' },
+  cashier: { label: 'Kasir',   icon: Monitor,    color: 'bg-blue-100 text-blue-700 border-blue-200' },
   service: { label: 'Service', icon: CheckCircle, color: 'bg-green-100 text-green-700 border-green-200' },
+  other:   { label: 'Lainnya', icon: Monitor,    color: 'bg-gray-100 text-gray-700 border-gray-200' },
 };
 
 const EMPTY_FORM = {
-  name: '', code: '', type: 'dapur', display_color: '#f97316',
+  name: '', code: '', type: 'kitchen', display_color: '#f97316',
   auto_print: false, printer_id: '',
 };
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
 function TypeBadge({ type }) {
-  const cfg = TYPE_CONFIG[type] || TYPE_CONFIG.dapur;
+  const cfg = TYPE_CONFIG[type] || TYPE_CONFIG.kitchen;
   const Icon = cfg.icon;
   return (
     <span className={cn(

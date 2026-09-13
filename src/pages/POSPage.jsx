@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useFetch, useDebounce } from '../hooks/useApi';
 import api from '../lib/api';
@@ -10,11 +10,12 @@ import { Badge } from '../components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../components/ui/select';
 import { useToast } from '../components/ui/toast';
+import { QRCodeSVG } from 'qrcode.react';
 import {
   Search, Plus, Minus, Trash2, ShoppingCart, CreditCard,
   Loader2, ChevronDown, Tag, X, Check, Coffee,
   Utensils, Receipt, Layers, User, UserPlus, Phone, Star, Wallet, QrCode, Clock, Building2, Gift, Sparkles, Ticket, TrendingUp, AlertTriangle,
-} from 'lucide-react';
+  Maximize, Minimize, Store } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 const ORDER_TYPES = [
@@ -22,12 +23,70 @@ const ORDER_TYPES = [
   { value: 'takeaway', label: 'Takeaway',  icon: Coffee },
 ];
 
+const generateDynamicQris = (qris, amount) => {
+  if (!qris) return '';
+  let amtStr = amount.toString();
+  if (amtStr.includes('.')) amtStr = amount.toFixed(0);
+  
+  let idx = 0;
+  const tags = {};
+  while (idx < qris.length) {
+    const tag = qris.substring(idx, idx + 2);
+    const len = parseInt(qris.substring(idx + 2, idx + 4), 10);
+    if (isNaN(len)) break;
+    const val = qris.substring(idx + 4, idx + 4 + len);
+    tags[tag] = val;
+    idx += 4 + len;
+  }
+  
+  tags['01'] = '12';
+  tags['54'] = amtStr;
+  
+  let newQris = '';
+  for (let i = 0; i < 63; i++) {
+    const t = i.toString().padStart(2, '0');
+    if (tags[t]) {
+      const v = tags[t];
+      newQris += t + v.length.toString().padStart(2, '0') + v;
+    }
+  }
+  
+  newQris += '6304';
+  
+  let crc = 0xFFFF;
+  for (let i = 0; i < newQris.length; i++) {
+    crc ^= (newQris.charCodeAt(i) << 8);
+    for (let j = 0; j < 8; j++) {
+      if ((crc & 0x8000) > 0) crc = ((crc << 1) ^ 0x1021) & 0xFFFF;
+      else crc = (crc << 1) & 0xFFFF;
+    }
+  }
+  
+  return newQris + crc.toString(16).toUpperCase().padStart(4, '0');
+};
+
 // ─── Main POS ─────────────────────────────────────────────────
 export default function POSPage() {
   const toast = useToast();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const editOrderId = searchParams.get('edit_order_id');
+  const posRef = useRef(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  const toggleFullscreen = useCallback(() => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen?.();
+    } else {
+      document.exitFullscreen?.();
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleFsChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', handleFsChange);
+    return () => document.removeEventListener('fullscreenchange', handleFsChange);
+  }, []);
 
   // Cart & order state
   const [cart, setCart] = useState([]);
@@ -65,6 +124,7 @@ export default function POSPage() {
   const { data: catData }      = useFetch('/categories');
   const { data: payData }      = useFetch('/payments/methods');
   const { data: settingsData } = useFetch('/settings');
+  const { data: vouchersData } = useFetch('/vouchers?is_active=true');
   const { data: tablesData, refetch: refetchTables } = useFetch('/tables');
   const { data: branchesData } = useFetch('/branches');
   const { data: currentShiftData, refetch: refetchShift } = useFetch('/shifts/current');
@@ -74,6 +134,55 @@ export default function POSPage() {
   const currentShift = currentShiftData?.shift || null;
 
   const products    = (productsData?.products || []).filter(p => p.is_available && p.status === 'active');
+  
+  const promoProducts = useMemo(() => {
+    const activeVouchers = vouchersData?.vouchers || [];
+    const promos = [];
+    activeVouchers.filter(v => v.type === 'item_discount' && v.applicable_products?.length).forEach(v => {
+      let parsed = [];
+      try { parsed = typeof v.applicable_products === 'string' ? JSON.parse(v.applicable_products) : v.applicable_products; } catch(e) {}
+      if (Array.isArray(parsed)) {
+        parsed.forEach(pid => {
+          const p = products.find(prod => prod.id === pid);
+          if (p && !promos.some(x => x.id === p.id)) {
+            const discValue = parseFloat(v.discount_value || 0);
+            const label = v.discount_type === 'percent' 
+              ? `${discValue}% OFF`
+              : `-Rp ${discValue.toLocaleString('id')}`;
+            promos.push({ ...p, promoLabel: label, promoValidTo: v.valid_to });
+          }
+        });
+      }
+    });
+    return promos;
+  }, [vouchersData, products]);
+
+  const popularProducts = useMemo(() => products.filter(p => p.is_popular === 1), [products]);
+
+  // Auto-discount map: product_id -> { discount_type, discount_value, voucher_name, max_qty }
+  const itemDiscountMap = useMemo(() => {
+    const activeVouchers = vouchersData?.vouchers || [];
+    const map = {};
+    activeVouchers.filter(v => v.type === 'item_discount' && v.is_active).forEach(v => {
+      let parsed = [];
+      try { parsed = typeof v.applicable_products === 'string' ? JSON.parse(v.applicable_products) : v.applicable_products; } catch(e) {}
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        parsed.forEach(pid => {
+          if (!map[pid]) {
+            map[pid] = {
+              discount_type: v.discount_type || 'fixed',
+              discount_value: parseFloat(v.discount_value || 0),
+              max_discount: v.max_discount ? parseFloat(v.max_discount) : null,
+              voucher_name: v.name,
+              max_qty: v.usage_per_member ? parseInt(v.usage_per_member) : null,
+            };
+          }
+        });
+      }
+    });
+    return map;
+  }, [vouchersData]);
+
   const categories  = catData?.categories || [];
   const payMethods  = payData?.methods || [];
   const tables      = tablesData?.tables || [];
@@ -127,8 +236,29 @@ export default function POSPage() {
     }).catch(() => toast.error('Gagal memuat order'));
   }, [editOrderId, tables.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Calculations
-  const subtotal    = cart.reduce((s, i) => s + (i.unitPrice + (i.addonsPerUnit || 0)) * i.qty, 0);
+  // Calculations — apply per-item discounts from active vouchers
+  const calcDiscountedPrice = (base, disc) => {
+    if (!disc) return base;
+    if (disc.discount_type === 'percent') {
+      let off = base * disc.discount_value / 100;
+      if (disc.max_discount && off > disc.max_discount) off = disc.max_discount;
+      return Math.max(0, base - off);
+    }
+    return Math.max(0, base - disc.discount_value);
+  };
+  const calcItemTotal = (item) => {
+    const base = item.unitPrice + (item.addonsPerUnit || 0);
+    const manualDisc = parseFloat(item.itemDiscount || 0);
+    const disc = itemDiscountMap[item.id];
+    if (!disc) return Math.max(0, base - manualDisc) * item.qty;
+    const maxQty = disc.max_qty || item.qty;
+    const discQty = Math.min(item.qty, maxQty);
+    const fullQty = item.qty - discQty;
+    const discUnit = Math.max(0, calcDiscountedPrice(base, disc) - manualDisc);
+    const fullUnit = Math.max(0, base - manualDisc);
+    return discUnit * discQty + fullUnit * fullQty;
+  };
+  const subtotal    = cart.reduce((s, i) => s + calcItemTotal(i), 0);
   const discountAmt = parseFloat(discount || 0);
   const taxAmt      = Math.round((subtotal - discountAmt) * taxRate / 100 * 100) / 100;
   const total       = Math.max(0, subtotal - discountAmt + taxAmt);
@@ -157,7 +287,7 @@ export default function POSPage() {
     });
   };
 
-  const shiftRequired = !currentShift;
+  const shiftRequired = shiftEnabled && !currentShift;
 
   const handleProductClick = (product) => {
     if (shiftRequired) { setShiftOpen(true); return; }
@@ -166,6 +296,83 @@ export default function POSPage() {
     } else {
       addItem(product);
     }
+  };
+
+  const renderProductCard = (product, promoLabel, promoValidTo) => {
+    const cartQty = cart.filter(i => i.id === product.id).reduce((s, i) => s + i.qty, 0);
+    const hasVariants = product.has_variants || product.has_addons || product.variant_groups?.length || product.addon_groups?.length;
+    
+    let timerText = null;
+    if (promoValidTo) {
+      const now = new Date();
+      const end = new Date(promoValidTo);
+      const diffMs = end - now;
+      if (diffMs > 0) {
+        const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+        const hours = Math.floor((diffMs / (1000 * 60 * 60)) % 24);
+        if (days > 0) timerText = `Sisa ${days} hr ${hours} jm`;
+        else timerText = `Sisa ${hours} jam`;
+      } else {
+        timerText = 'Berakhir';
+      }
+    }
+
+    return (
+      <button
+        key={product.id}
+        onClick={() => handleProductClick(product)}
+        className={cn(
+          'relative flex flex-col text-left rounded-xl border transition-all hover:shadow-md active:scale-95 overflow-hidden bg-card w-full',
+          cartQty > 0
+            ? 'border-primary shadow-sm ring-1 ring-primary/20'
+            : 'border-border hover:border-primary/40'
+        )}
+      >
+        {promoLabel && (
+          <div className="absolute top-0 left-0 bg-red-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-br-lg z-20 shadow-sm whitespace-nowrap group/badge cursor-default">
+            {promoLabel}
+            {timerText && (
+              <div className="absolute top-full left-0 mt-0.5 bg-black/80 text-white text-[9px] px-1.5 py-1 rounded shadow-md opacity-0 group-hover/badge:opacity-100 transition-opacity whitespace-nowrap z-50 pointer-events-none">
+                {timerText}
+              </div>
+            )}
+          </div>
+        )}
+        {/* Cart badge */}
+        {cartQty > 0 && (
+          <span className="absolute top-1.5 right-1.5 w-5 h-5 bg-primary text-primary-foreground rounded-full text-[10px] font-bold flex items-center justify-center z-10 shadow-sm ring-2 ring-card pointer-events-none">
+            {cartQty}
+          </span>
+        )}
+
+        {/* Image Area */}
+        <div className="w-full aspect-[4/3] bg-secondary flex items-center justify-center relative overflow-hidden border-b">
+          {product.image ? (
+            <img src={product.image.startsWith('http') ? product.image : `/uploads/${product.image}`} alt={product.name} className="w-full h-full object-cover transition-transform duration-300 hover:scale-105" />
+          ) : (
+            <Coffee className="w-6 h-6 text-muted-foreground/40" />
+          )}
+          
+          {/* Variant indicator overlay on image */}
+          {hasVariants && (
+            <div className="absolute bottom-1.5 left-1.5 bg-background/90 backdrop-blur-sm p-1 rounded-md shadow-sm border pointer-events-none">
+              <Layers className="w-3 h-3 text-primary" />
+            </div>
+          )}
+        </div>
+
+        {/* Text Area */}
+        <div className="p-2.5 w-full flex flex-col flex-1 gap-1">
+          <p className="text-xs font-semibold leading-snug line-clamp-2">{product.name}</p>
+          <div className="mt-auto pt-1 flex items-center justify-between">
+            <p className="text-xs font-bold text-primary">{fmt(product.price)}</p>
+            {product.stock > 0 && product.stock <= (product.min_stock || 0) && (
+              <span className="text-[9px] text-amber-600 font-bold bg-amber-50 px-1 py-0.5 rounded">Sisa {product.stock}</span>
+            )}
+          </div>
+        </div>
+      </button>
+    );
   };
 
   const updateQty = (key, delta) => {
@@ -217,41 +424,40 @@ export default function POSPage() {
         await api.put(`/orders/${editingOrder.id}/items`, { items });
         order = { id: editingOrder.id };
         toast.success('Pesanan berhasil diperbarui!');
-        setCheckoutOpen(false);
-        clearCart();
-        setEditingOrder(null);
-        navigate('/orders');
-        return;
+      } else {
+        // ── Create mode: new order ────────────────────────────────
+        const res = await api.post('/orders', {
+          customer_name: customerName || 'Umum',
+          customer_email: selectedMember?.email || null,
+          customer_phone: selectedMember?.phone || null,
+          order_type: orderType,
+          table_number: selectedTable?.table_number || null,
+          table_id: selectedTable?.id || null,
+          payment_method: paymentMethod,
+          notes: notes || null,
+          discount: discountAmt || 0,
+          voucher_code: appliedVoucher?.code || null,
+          items: cart.map(i => ({
+            product_id: i.id, quantity: i.qty, notes: i.notes || null,
+            variants: (i.variants || []).map(v => ({ group_id: v.group_id, option_id: v.option_id })),
+            addons:   (i.addons  || []).map(a => ({ addon_id: a.addon_id, qty: a.qty })),
+          })),
+        });
+        order = res.data.order;
+        setLastOrder(order);
       }
-
-      // ── Create mode: new order ────────────────────────────────
-      const res = await api.post('/orders', {
-        customer_name: customerName || 'Umum',
-        customer_email: selectedMember?.email || null,
-        customer_phone: selectedMember?.phone || null,
-        order_type: orderType,
-        table_number: selectedTable?.table_number || null,
-        table_id: selectedTable?.id || null,
-        payment_method: paymentMethod,
-        notes: notes || null,
-        discount: discountAmt || 0,
-        voucher_code: appliedVoucher?.code || null,
-        items: cart.map(i => ({
-          product_id: i.id, quantity: i.qty, notes: i.notes || null,
-          variants: (i.variants || []).map(v => ({ group_id: v.group_id, option_id: v.option_id })),
-          addons:   (i.addons  || []).map(a => ({ addon_id: a.addon_id, qty: a.qty })),
-        })),
-      });
-      order = res.data.order;
-      setLastOrder(order);
 
       if (printReceipt || settings.pos_auto_print_receipt === 'true') {
-        const r = await api.get(`/printers/receipt/${order.id}`);
-        await smartPrint(buildReceiptHTML(r.data.receipt, r.data.printer), r.data.printer, 'receipt');
+        try {
+          const r = await api.get(`/printers/receipt/${order.id}`);
+          await smartPrint(buildReceiptHTML(r.data.receipt, r.data.printer), r.data.printer, 'receipt', r.data.receipt);
+        } catch (e) { console.error('Print receipt failed', e); }
       }
       if (printKitchen || settings.pos_auto_print_kitchen === 'true') {
-        const k = await api.get(`/printers/kitchen/${order.id}`);
-        await smartPrint(buildKitchenHTML(k.data.ticket, k.data.printer), k.data.printer, 'kitchen');
+        try {
+          const k = await api.get(`/printers/kitchen/${order.id}`);
+          await smartPrint(buildKitchenHTML(k.data.ticket, k.data.printer), k.data.printer, 'kitchen', k.data.ticket);
+        } catch (e) { console.error('Print kitchen failed', e); }
       }
 
       setCheckoutOpen(false);
@@ -259,13 +465,19 @@ export default function POSPage() {
       refetchTables();
       refetchShift();
 
-      if (selectedMember?.email) {
+      if (!editingOrder && selectedMember?.email) {
         api.get(`/orders/${order.id}/points-preview`)
           .then(r => { if (r.data.enabled && r.data.points > 0) setPointsPreview({ orderId: order.id, ...r.data }); })
           .catch(() => {});
       }
 
       clearCart();
+      if (editingOrder) {
+        setEditingOrder(null);
+        navigate('/orders');
+        return;
+      }
+      
       const isPending = paymentMethod === 'pending';
       toast.success(isPending ? 'Order dibuat — menunggu pembayaran' : 'Order berhasil dibuat!');
     } catch (err) {
@@ -275,7 +487,7 @@ export default function POSPage() {
 
   // ── Render ────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col lg:flex-row h-full overflow-hidden bg-muted/30">
+    <div ref={posRef} className="flex flex-col lg:flex-row h-full overflow-hidden bg-muted/30">
 
       {/* ── LEFT: Product area ───────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
@@ -321,6 +533,9 @@ export default function POSPage() {
                   <Clock className="w-3.5 h-3.5" />Buka Shift
                 </Button>
               )}
+              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 ml-1 text-muted-foreground hover:bg-muted" onClick={toggleFullscreen} title="Toggle Fullscreen">
+                {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
+              </Button>
             </div>
           </div>
           {/* Search */}
@@ -362,7 +577,7 @@ export default function POSPage() {
         </div>
 
         {/* Product grid */}
-        <div className="flex-1 overflow-y-auto p-4 relative">
+        <div className="flex-1 overflow-y-auto p-4 relative bg-muted/30">
           {/* Shift lock overlay */}
           {shiftRequired && (
             <div className="absolute inset-0 z-10 bg-background/80 backdrop-blur-sm flex flex-col items-center justify-center gap-4">
@@ -391,45 +606,44 @@ export default function POSPage() {
               <p className="text-sm">{debouncedSearch ? `Tidak ada hasil untuk "${debouncedSearch}"` : 'Tidak ada produk tersedia'}</p>
             </div>
           ) : (
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-4 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
-              {products.map(product => {
-                const cartQty = cart.filter(i => i.id === product.id).reduce((s, i) => s + i.qty, 0);
-                const hasVariants = product.has_variants || product.has_addons || product.variant_groups?.length || product.addon_groups?.length;
-                return (
-                  <button
-                    key={product.id}
-                    onClick={() => handleProductClick(product)}
-                    className={cn(
-                      'relative flex flex-col items-center text-center rounded-2xl border-2 p-3 transition-all hover:shadow-md active:scale-95 gap-1.5',
-                      cartQty > 0
-                        ? 'border-primary bg-primary/5 shadow-sm'
-                        : 'border-border bg-card hover:border-primary/40'
-                    )}
-                  >
-                    {/* Cart badge */}
-                    {cartQty > 0 && (
-                      <span className="absolute -top-2 -right-2 w-5 h-5 bg-primary text-primary-foreground rounded-full text-[10px] font-bold flex items-center justify-center z-10 shadow">
-                        {cartQty}
-                      </span>
-                    )}
-                    {/* Variant indicator */}
-                    {hasVariants && (
-                      <span className="absolute top-1.5 left-1.5">
-                        <Layers className="w-3 h-3 text-violet-400" />
-                      </span>
-                    )}
+            <div className="flex flex-col gap-6">
+              {/* Slider Promo */}
+              {promoProducts.length > 0 && activeCategory === 'all' && !debouncedSearch && (
+                <div>
+                  <h3 className="font-semibold text-sm mb-2.5 flex items-center gap-1.5 text-red-600"><Ticket className="w-4 h-4" /> Sedang Promo</h3>
+                  <div className="flex gap-3 overflow-x-auto pb-3 scrollbar-hide snap-x">
+                    {promoProducts.map(product => (
+                      <div key={product.id} className="w-32 sm:w-36 md:w-40 shrink-0 snap-start">
+                        {renderProductCard(product, product.promoLabel, product.promoValidTo)}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
-                    <div className="w-11 h-11 rounded-xl bg-secondary flex items-center justify-center">
-                      <Coffee className="w-5 h-5 text-muted-foreground/60" />
-                    </div>
-                    <p className="text-xs font-medium leading-tight line-clamp-2 w-full">{product.name}</p>
-                    <p className="text-sm font-bold text-primary">{fmt(product.price)}</p>
-                    {product.stock > 0 && product.stock <= (product.min_stock || 0) && (
-                      <p className="text-[9px] text-amber-600 font-medium">Stok: {product.stock}</p>
-                    )}
-                  </button>
-                );
-              })}
+              {/* Slider Terlaris */}
+              {popularProducts.length > 0 && activeCategory === 'all' && !debouncedSearch && (
+                <div>
+                  <h3 className="font-semibold text-sm mb-2.5 flex items-center gap-1.5 text-amber-600"><TrendingUp className="w-4 h-4" /> Produk Terlaris</h3>
+                  <div className="flex gap-3 overflow-x-auto pb-3 scrollbar-hide snap-x">
+                    {popularProducts.map(product => (
+                      <div key={product.id} className="w-32 sm:w-36 md:w-40 shrink-0 snap-start">
+                        {renderProductCard(product, 'BEST SELLER')}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Main Grid */}
+              <div>
+                {(promoProducts.length > 0 || popularProducts.length > 0) && activeCategory === 'all' && !debouncedSearch && (
+                  <h3 className="font-semibold text-sm mb-3 flex items-center gap-1.5"><Store className="w-4 h-4 text-primary" /> Semua Produk</h3>
+                )}
+                <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-3">
+                  {products.map(product => renderProductCard(product))}
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -460,6 +674,10 @@ export default function POSPage() {
           appliedVoucher={appliedVoucher}
           onVoucherApplied={v => setAppliedVoucher(v)}
           onVoucherRemove={() => setAppliedVoucher(null)}
+          itemDiscountMap={itemDiscountMap}
+          calcItemTotal={calcItemTotal}
+          calcDiscountedPrice={calcDiscountedPrice}
+          onItemDiscountChange={(key, val) => setCart(c => c.map(i => i.cartKey === key ? { ...i, itemDiscount: val } : i))}
         />
       </div>
 
@@ -518,6 +736,10 @@ export default function POSPage() {
                   onVoucherApplied={v => setAppliedVoucher(v)}
                   onVoucherRemove={() => setAppliedVoucher(null)}
                   isMobile
+                  itemDiscountMap={itemDiscountMap}
+                  calcItemTotal={calcItemTotal}
+                  calcDiscountedPrice={calcDiscountedPrice}
+                  onItemDiscountChange={(key, val) => setCart(c => c.map(i => i.cartKey === key ? { ...i, itemDiscount: val } : i))}
                 />
               </div>
             </div>
@@ -551,6 +773,7 @@ export default function POSPage() {
         payMethods={payMethods} notes={notes} setNotes={setNotes}
         orderType={orderType} selectedTable={selectedTable} customerName={customerName}
         selectedMember={selectedMember}
+        qrisString={settings.qris_string}
         fmt={fmt} onConfirm={placeOrder} placing={placing}
       />
 
@@ -586,6 +809,7 @@ function CartPanel({
   pointsPreview, onClaimPoints, claimingPoints,
   currency, isMobile,
   appliedVoucher, onVoucherApplied, onVoucherRemove,
+  itemDiscountMap, calcItemTotal, calcDiscountedPrice, onItemDiscountChange,
 }) {
   // Estimasi poin untuk transaksi berjalan (dari settings global, kasar)
   const estPoints = selectedMember && total > 0 && !lastOrder ? null : null; // handled server-side after order
@@ -663,6 +887,10 @@ function CartPanel({
                 onQtyChange={(d) => updateQty(item.cartKey, d)}
                 onRemove={() => onRemove(item.cartKey)}
                 onNoteChange={(note) => onNoteChange(item.cartKey, note)}
+                voucherDiscount={itemDiscountMap?.[item.id]}
+                calcItemTotal={calcItemTotal}
+                calcDiscountedPrice={calcDiscountedPrice}
+                onItemDiscountChange={(val) => onItemDiscountChange(item.cartKey, val)}
               />
             ))}
           </div>
@@ -800,11 +1028,11 @@ function CartPanel({
 
           <div className="flex gap-1.5">
             <Button variant="outline" size="sm" className="flex-1 h-8 text-xs gap-1 bg-white"
-              onClick={async () => { try { const r = await api.get(`/printers/receipt/${lastOrder.id}`); await smartPrint(buildReceiptHTML(r.data.receipt, r.data.printer), r.data.printer, 'receipt'); } catch {} }}>
+              onClick={async () => { try { const r = await api.get(`/printers/receipt/${lastOrder.id}`); await smartPrint(buildReceiptHTML(r.data.receipt, r.data.printer), r.data.printer, 'receipt', r.data.receipt); } catch {} }}>
               <Receipt className="w-3 h-3" /> Struk
             </Button>
             <Button variant="outline" size="sm" className="flex-1 h-8 text-xs gap-1 bg-white"
-              onClick={async () => { try { const r = await api.get(`/printers/kitchen/${lastOrder.id}`); await smartPrint(buildKitchenHTML(r.data.ticket, r.data.printer), r.data.printer, 'kitchen'); } catch {} }}>
+              onClick={async () => { try { const r = await api.get(`/printers/kitchen/${lastOrder.id}`); await smartPrint(buildKitchenHTML(r.data.ticket, r.data.printer), r.data.printer, 'kitchen', r.data.ticket); } catch {} }}>
               <Utensils className="w-3 h-3" /> Dapur
             </Button>
           </div>
@@ -1199,19 +1427,55 @@ function ScanMemberDialog({ open, onClose, onSelect, fmt }) {
 }
 
 // ─── Cart Item ────────────────────────────────────────────────
-function CartItem({ item, fmt, onQtyChange, onRemove, onNoteChange }) {
+function CartItem({ item, fmt, onQtyChange, onRemove, onNoteChange, voucherDiscount, calcItemTotal, calcDiscountedPrice, onItemDiscountChange }) {
   const [showNote, setShowNote] = useState(false);
-  const lineTotal = (item.unitPrice + (item.addonsPerUnit || 0)) * item.qty;
+  
+  const baseUnit = item.unitPrice + (item.addonsPerUnit || 0);
+  const manualDisc = parseFloat(item.itemDiscount || 0);
+  const discountedUnit = voucherDiscount ? calcDiscountedPrice(baseUnit, voucherDiscount) : baseUnit;
+  
+  const hasVoucher = voucherDiscount && discountedUnit < baseUnit;
+  const maxQty = voucherDiscount?.max_qty || item.qty;
+  const discQty = hasVoucher ? Math.min(item.qty, maxQty) : 0;
+  const fullQty = item.qty - discQty;
+  
+  const lineTotal = calcItemTotal ? calcItemTotal(item) : (baseUnit - manualDisc) * item.qty;
+  const hasManualDisc = manualDisc > 0;
 
   return (
-    <div className="bg-background rounded-xl border p-2.5 group">
+    <div className={cn('bg-background rounded-xl border p-2.5 group', (hasVoucher || hasManualDisc) && 'border-red-200 bg-red-50/30')}>
+      {hasVoucher && (
+        <div className="flex items-center gap-1 mb-1">
+          <Tag className="w-3 h-3 text-red-500" />
+          <span className="text-[10px] font-bold text-red-600">{voucherDiscount.voucher_name}</span>
+          <span className="text-[10px] text-red-400">— {voucherDiscount.discount_type === 'percent' ? `${voucherDiscount.discount_value}%` : fmt(voucherDiscount.discount_value)} OFF {voucherDiscount.max_qty ? `(Max ${voucherDiscount.max_qty})` : ''}</span>
+        </div>
+      )}
       <div className="flex items-start gap-2">
         <div className="flex-1 min-w-0">
           <p className="text-xs font-semibold leading-snug">{item.name}</p>
-          <div className="flex items-center gap-2 mt-0.5">
-            <span className="text-xs text-primary font-medium">{fmt(item.unitPrice)}</span>
+          <div className="flex flex-col gap-0.5 mt-0.5">
+            {/* Voucher breakdown */}
+            {hasVoucher && discQty > 0 && (
+               <div className="flex items-center gap-1.5">
+                 <span className="text-[10px] text-muted-foreground line-through">{fmt(baseUnit)}</span>
+                 <span className="text-xs text-red-600 font-bold">{fmt(Math.max(0, discountedUnit - manualDisc))}</span>
+                 {item.qty > 1 && <span className="text-[10px] text-red-500 font-medium">x {discQty}</span>}
+               </div>
+            )}
+            {/* Full price breakdown (for items exceeding voucher limit, or no voucher) */}
+            {fullQty > 0 && (
+               <div className="flex items-center gap-1.5">
+                 {hasManualDisc && <span className="text-[10px] text-muted-foreground line-through">{fmt(baseUnit)}</span>}
+                 <span className={cn("text-xs font-medium", hasManualDisc ? "text-red-600 font-bold" : "text-primary")}>
+                   {fmt(Math.max(0, baseUnit - manualDisc))}
+                 </span>
+                 {item.qty > 1 && hasVoucher && <span className="text-[10px] text-muted-foreground font-medium">x {fullQty} (Normal)</span>}
+               </div>
+            )}
+            
             {item.addonsPerUnit > 0 && (
-              <span className="text-[10px] text-orange-500">+{fmt(item.addonsPerUnit)}</span>
+              <span className="text-[10px] text-orange-500 inline-block mt-0.5">Termasuk addons +{fmt(item.addonsPerUnit)}/item</span>
             )}
           </div>
           {item.addons?.length > 0 && (
@@ -1251,20 +1515,41 @@ function CartItem({ item, fmt, onQtyChange, onRemove, onNoteChange }) {
           className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-0.5 transition-colors"
         >
           <Plus className="w-2.5 h-2.5" />
-          {item.notes ? item.notes : 'Catatan'}
+          {item.notes || item.itemDiscount ? 'Edit Catatan / Diskon' : 'Catatan / Diskon'}
         </button>
-        <span className="text-xs font-bold">{fmt(lineTotal)}</span>
+        <div className="flex flex-col items-end">
+          <span className={cn('text-xs font-bold', (hasVoucher || hasManualDisc) && 'text-red-600')}>{fmt(lineTotal)}</span>
+          {(item.notes || item.itemDiscount) && !showNote && (
+            <div className="text-[10px] text-muted-foreground flex flex-col items-end mt-0.5">
+              {item.notes && <span className="truncate max-w-[150px]">"{item.notes}"</span>}
+              {item.itemDiscount && <span className="text-red-500 font-medium">Diskon: {fmt(item.itemDiscount)}/item</span>}
+            </div>
+          )}
+        </div>
       </div>
 
       {showNote && (
-        <Input
-          autoFocus
-          placeholder="Catatan untuk item ini…"
-          value={item.notes}
-          onChange={e => onNoteChange(e.target.value)}
-          onBlur={() => { if (!item.notes) setShowNote(false); }}
-          className="mt-1.5 h-7 text-xs"
-        />
+        <div className="mt-2 p-2 bg-muted/50 rounded-lg space-y-2 border">
+          <div>
+            <label className="text-[10px] font-semibold text-muted-foreground mb-1 block">Catatan Item</label>
+            <Input
+              placeholder="Cth: Jangan terlalu pedas..."
+              value={item.notes}
+              onChange={e => onNoteChange(e.target.value)}
+              className="h-7 text-xs bg-background"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] font-semibold text-muted-foreground mb-1 block">Diskon Manual / Item (Rp)</label>
+            <Input
+              type="number"
+              placeholder="0"
+              value={item.itemDiscount || ''}
+              onChange={e => onItemDiscountChange(e.target.value)}
+              className="h-7 text-xs bg-background"
+            />
+          </div>
+        </div>
       )}
     </div>
   );
@@ -1362,15 +1647,89 @@ function TablePickerDialog({ open, onClose, tables, selected, onSelect }) {
 function CheckoutDialog({
   open, onClose, cart, subtotal, discountAmt, taxAmt, total,
   paymentMethod, setPaymentMethod, payMethods, notes, setNotes,
-  orderType, selectedTable, customerName, selectedMember, fmt, onConfirm, placing,
+  orderType, selectedTable, customerName, selectedMember, qrisString, fmt, onConfirm, placing,
 }) {
+  const [step, setStep] = useState('form');
+  const [kodeUnik, setKodeUnik] = useState(0);
+  
+  // Fetch unique code when dialog opens
+  useEffect(() => {
+    if (open) {
+      setStep('form');
+      import('../lib/api').then(({ default: api }) => {
+        api.get('/orders/qris/unique-code')
+          .then(res => setKodeUnik(res.data.kode_unik))
+          .catch(() => setKodeUnik(Math.floor(Math.random() * 900) + 100)); // Fallback if error
+      });
+    }
+  }, [open]);
+
   const ICONS = { cash: '💵', digital: '📱', transfer: '🏦', wallet: '👛' };
   const isPendingPay = paymentMethod === 'pending';
+  const qrisTotal = total + (paymentMethod === 'qris' ? kodeUnik : 0);
+  const dynamicQris = paymentMethod === 'qris' && qrisString ? generateDynamicQris(qrisString, qrisTotal) : null;
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader><DialogTitle>Konfirmasi Pembayaran</DialogTitle></DialogHeader>
+      <DialogContent className="max-w-md">
+        <DialogHeader><DialogTitle>{step === 'qris' ? 'Pembayaran QRIS' : 'Konfirmasi Pembayaran'}</DialogTitle></DialogHeader>
+        
+        {step === 'qris' ? (
+          <div className="space-y-4 py-4 flex flex-col items-center">
+            {dynamicQris ? (
+              <>
+                <p className="text-sm text-center text-muted-foreground">
+                  Silakan minta pelanggan scan QR Code di bawah ini untuk membayar sejumlah 
+                  <br/>
+                  <strong className="text-xl text-primary">{fmt(qrisTotal)}</strong>
+                </p>
+                {kodeUnik > 0 && (
+                  <p className="text-[11px] text-amber-600 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 mt-1">
+                    Termasuk kode unik: {kodeUnik}
+                  </p>
+                )}
+                <div className="bg-white p-4 rounded-2xl shadow-sm border mt-4">
+                  <QRCodeSVG value={dynamicQris} size={200} level="M" />
+                </div>
+              </>
+            ) : (
+              <div className="text-center space-y-2 p-4">
+                <p className="text-amber-600 font-semibold">String QRIS Belum Dikonfigurasi!</p>
+                <p className="text-sm text-muted-foreground">Harap upload ulang gambar QRIS Anda di menu <strong>Settings &gt; Payments</strong> agar QR Code dinamis dapat muncul di sini.</p>
+                <p className="text-sm text-muted-foreground mt-4">Jika Anda menggunakan EDC atau QRIS statis terpisah, silakan lanjutkan jika pelanggan sudah membayar.</p>
+              </div>
+            )}
+            <div className="flex w-full gap-2 pt-4">
+              <Button variant="outline" className="flex-1" onClick={() => setStep('form')} disabled={placing}>Kembali</Button>
+              {dynamicQris && (
+                <Button variant="outline" className="flex-1" disabled={placing} onClick={async () => {
+                  try {
+                    const { smartPrint } = await import('../lib/printer');
+                    // Mock receipt data just for the QR code bill
+                    const receipt = { qrisOnly: true, amount: qrisTotal, qris: dynamicQris };
+                    // Dummy html
+                    const html = `<div style="text-align:center"><h3>TAGIHAN</h3><p>Total: ${fmt(qrisTotal)}</p></div>`;
+                    
+                    // We need to fetch printer info from the backend or just rely on default
+                    const { default: api } = await import('../lib/api');
+                    const { data } = await api.get('/printers').catch(() => ({ data: { printers: [] } }));
+                    const printer = data?.printers?.find(p => p.type === 'receipt' && p.is_active === 1) || null;
+                    
+                    await smartPrint(html, printer, 'receipt', receipt);
+                  } catch (e) {
+                    console.error('Print QRIS failed', e);
+                  }
+                }}>
+                  <Receipt className="w-4 h-4 mr-2" /> Print QRIS
+                </Button>
+              )}
+              <Button className="flex-1" onClick={() => onConfirm(true, true)} disabled={placing}>
+                {placing ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Utensils className="w-4 h-4 mr-2" />}
+                Sudah Dibayar
+              </Button>
+            </div>
+          </div>
+        ) : (
         <div className="space-y-4">
           {/* Order summary */}
           <div className="bg-muted/40 rounded-xl p-4 space-y-1.5 text-sm">
@@ -1398,6 +1757,7 @@ function CheckoutDialog({
                 const noMember = isBalance && !selectedMember;
                 return (
                   <button
+                    type="button"
                     key={m.code}
                     onClick={() => !noMember && setPaymentMethod(m.code)}
                     disabled={noMember}
@@ -1463,15 +1823,22 @@ function CheckoutDialog({
               Dapur
             </Button>
             <Button
-              onClick={() => onConfirm(!isPendingPay, true)}
+              onClick={() => {
+                if (paymentMethod === 'qris') {
+                  setStep('qris');
+                } else {
+                  onConfirm(!isPendingPay, true);
+                }
+              }}
               disabled={placing}
               className={cn('h-11 gap-1 text-xs font-semibold', isPendingPay && 'bg-amber-500 hover:bg-amber-600')}
             >
               {placing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : isPendingPay ? <Clock className="w-3.5 h-3.5" /> : <Receipt className="w-3.5 h-3.5" />}
-              {isPendingPay ? 'Simpan Order' : 'Bayar'}
+              {paymentMethod === 'qris' ? 'Lanjut QRIS' : (isPendingPay ? 'Simpan Order' : 'Bayar')}
             </Button>
           </div>
         </div>
+        )}
       </DialogContent>
     </Dialog>
   );
