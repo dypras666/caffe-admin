@@ -149,7 +149,7 @@ export default function POSPage() {
             const label = v.discount_type === 'percent' 
               ? `${discValue}% OFF`
               : `-Rp ${discValue.toLocaleString('id')}`;
-            promos.push({ ...p, promoLabel: label, promoValidTo: v.valid_to });
+            promos.push({ ...p, promoLabel: label, promoValidTo: v.valid_until });
           }
         });
       }
