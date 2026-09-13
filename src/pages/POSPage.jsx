@@ -320,17 +320,17 @@ export default function POSPage() {
         key={product.id}
         onClick={() => handleProductClick(product)}
         className={cn(
-          'relative flex flex-col text-left rounded-xl border transition-all hover:shadow-md active:scale-95 overflow-hidden bg-card w-full',
+          'group relative flex flex-col text-left rounded-xl border transition-all hover:shadow-md active:scale-95 overflow-hidden bg-card w-full',
           cartQty > 0
             ? 'border-primary shadow-sm ring-1 ring-primary/20'
             : 'border-border hover:border-primary/40'
         )}
       >
         {promoLabel && (
-          <div className="absolute top-0 left-0 bg-red-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-br-lg z-20 shadow-sm whitespace-nowrap group/badge cursor-default">
+          <div className="absolute top-0 left-0 bg-red-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-br-lg z-20 shadow-sm whitespace-nowrap">
             {promoLabel}
             {timerText && (
-              <div className="absolute top-full left-0 mt-0.5 bg-black/80 text-white text-[9px] px-1.5 py-1 rounded shadow-md opacity-0 group-hover/badge:opacity-100 transition-opacity whitespace-nowrap z-50 pointer-events-none">
+              <div className="absolute top-full left-0 mt-0.5 bg-black/80 text-white text-[9px] px-1.5 py-1 rounded shadow-md opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50 pointer-events-none">
                 {timerText}
               </div>
             )}
