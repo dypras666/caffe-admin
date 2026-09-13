@@ -134,14 +134,23 @@ export default function POSPage() {
   const currentShift = currentShiftData?.shift || null;
 
   const products    = (productsData?.products || []).filter(p => p.is_available && p.status === 'active');
+  const categories  = catData?.categories || [];
   
+  // Find the DB "Promo" category (slug='promo') to merge its products into the virtual Promo tab
+  const promoCategoryId = useMemo(() => {
+    const cat = categories.find(c => c.slug === 'promo');
+    return cat ? cat.id : null;
+  }, [categories]);
+
   const promoProducts = useMemo(() => {
     const activeVouchers = vouchersData?.vouchers || [];
     const promos = [];
+    // 1) Add products from voucher-based item_discount
     activeVouchers.filter(v => v.type === 'item_discount' && v.applicable_products?.length).forEach(v => {
-      let parsed = [];
-      try { parsed = typeof v.applicable_products === 'string' ? JSON.parse(v.applicable_products) : v.applicable_products; } catch(e) {}
-      if (Array.isArray(parsed)) {
+      let parsed = v.applicable_products;
+      try { while (typeof parsed === 'string') { parsed = JSON.parse(parsed); } } catch(e) { parsed = []; }
+      if (!Array.isArray(parsed)) parsed = [];
+      if (parsed.length > 0) {
         parsed.forEach(pid => {
           const p = products.find(prod => prod.id === pid);
           if (p && !promos.some(x => x.id === p.id)) {
@@ -154,8 +163,16 @@ export default function POSPage() {
         });
       }
     });
+    // 2) Also include products from the DB "Promo" category
+    if (promoCategoryId) {
+      products.filter(p => p.category_id === promoCategoryId).forEach(p => {
+        if (!promos.some(x => x.id === p.id)) {
+          promos.push(p);
+        }
+      });
+    }
     return promos;
-  }, [vouchersData, products]);
+  }, [vouchersData, products, promoCategoryId]);
 
   const popularProducts = useMemo(() => products.filter(p => p.is_popular === 1), [products]);
 
@@ -164,9 +181,10 @@ export default function POSPage() {
     const activeVouchers = vouchersData?.vouchers || [];
     const map = {};
     activeVouchers.filter(v => v.type === 'item_discount' && v.is_active).forEach(v => {
-      let parsed = [];
-      try { parsed = typeof v.applicable_products === 'string' ? JSON.parse(v.applicable_products) : v.applicable_products; } catch(e) {}
-      if (Array.isArray(parsed) && parsed.length > 0) {
+      let parsed = v.applicable_products;
+      try { while (typeof parsed === 'string') { parsed = JSON.parse(parsed); } } catch(e) { parsed = []; }
+      if (!Array.isArray(parsed)) parsed = [];
+      if (parsed.length > 0) {
         parsed.forEach(pid => {
           if (!map[pid]) {
             map[pid] = {
@@ -183,7 +201,6 @@ export default function POSPage() {
     return map;
   }, [vouchersData]);
 
-  const categories  = catData?.categories || [];
   const payMethods  = payData?.methods || [];
   const tables      = tablesData?.tables || [];
   const settings    = (settingsData?.settings || []).reduce((a, s) => ({ ...a, [s.setting_key]: s.setting_value }), {});
@@ -400,7 +417,7 @@ export default function POSPage() {
     } finally { setClaimingPoints(false); }
   };
 
-  const placeOrder = async (printReceipt = false, printKitchen = false) => {
+  const placeOrder = async (printReceipt = false, printKitchen = false, paymentDetails = {}) => {
     if (!cart.length) return;
     if (requireTable && orderType === 'dine-in' && !selectedTable) {
       toast.warning('Wajib pilih meja untuk dine-in'); setTablePickerOpen(true); return;
@@ -432,6 +449,8 @@ export default function POSPage() {
           table_number: selectedTable?.table_number || null,
           table_id: selectedTable?.id || null,
           payment_method: paymentMethod,
+          cash_received: paymentMethod === 'cash' ? paymentDetails.cashReceived : null,
+          change_amount: paymentMethod === 'cash' ? paymentDetails.changeAmount : null,
           notes: notes || null,
           discount: discountAmt || 0,
           voucher_code: appliedVoucher?.code || null,
@@ -557,7 +576,7 @@ export default function POSPage() {
 
           {/* Category pills */}
           <div className="flex gap-2 overflow-x-auto scrollbar-none pb-0.5">
-            {[{ id: 'all', name: 'Semua' }, { id: 'promo', name: 'Promo' }, ...categories.filter(c => c.is_active)].map(cat => (
+            {[{ id: 'all', name: 'Semua' }, { id: 'promo', name: 'Promo' }, ...categories.filter(c => c.is_active && c.slug !== 'promo')].map(cat => (
               <button
                 key={cat.id}
                 onClick={() => setActiveCategory(String(cat.id))}
@@ -627,7 +646,7 @@ export default function POSPage() {
                   <h3 className="font-semibold text-sm mb-3 flex items-center gap-1.5"><Store className="w-4 h-4 text-primary" /> Semua Produk</h3>
                 )}
                 <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-3">
-                  {(activeCategory === 'promo' ? promoProducts : products).map(product => 
+                  {(activeCategory === 'promo' || (promoCategoryId && activeCategory === String(promoCategoryId)) ? promoProducts : products).map(product => 
                     renderProductCard(product, product.promoLabel, product.promoValidTo)
                   )}
                 </div>
@@ -761,6 +780,9 @@ export default function POSPage() {
         selectedMember={selectedMember}
         qrisString={settings.qris_string}
         fmt={fmt} onConfirm={placeOrder} placing={placing}
+        appliedVoucher={appliedVoucher}
+        onApplied={onVoucherApplied}
+        onRemove={onVoucherRemove}
       />
 
       {/* ── Shift open modal ──── */}
@@ -1619,9 +1641,13 @@ function CheckoutDialog({
   open, onClose, cart, subtotal, discountAmt, taxAmt, total,
   paymentMethod, setPaymentMethod, payMethods, notes, setNotes,
   orderType, selectedTable, customerName, selectedMember, qrisString, fmt, onConfirm, placing,
+  appliedVoucher, onApplied, onRemove
 }) {
   const [step, setStep] = useState('form');
   const [kodeUnik, setKodeUnik] = useState(0);
+  const [cashReceived, setCashReceived] = useState('');
+  
+  const changeAmount = (parseInt(cashReceived.replace(/\D/g, '')) || 0) - total;
   
   // Fetch unique code when dialog opens
   useEffect(() => {
@@ -1642,7 +1668,7 @@ function CheckoutDialog({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-4xl">
         <DialogHeader><DialogTitle>{step === 'qris' ? 'Pembayaran QRIS' : 'Konfirmasi Pembayaran'}</DialogTitle></DialogHeader>
         
         {step === 'qris' ? (
@@ -1676,16 +1702,11 @@ function CheckoutDialog({
                 <Button variant="outline" className="flex-1" disabled={placing} onClick={async () => {
                   try {
                     const { smartPrint } = await import('../lib/printer');
-                    // Mock receipt data just for the QR code bill
                     const receipt = { qrisOnly: true, amount: qrisTotal, qris: dynamicQris };
-                    // Dummy html
                     const html = `<div style="text-align:center"><h3>TAGIHAN</h3><p>Total: ${fmt(qrisTotal)}</p></div>`;
-                    
-                    // We need to fetch printer info from the backend or just rely on default
                     const { default: api } = await import('../lib/api');
                     const { data } = await api.get('/printers').catch(() => ({ data: { printers: [] } }));
                     const printer = data?.printers?.find(p => p.type === 'receipt' && p.is_active === 1) || null;
-                    
                     await smartPrint(html, printer, 'receipt', receipt);
                   } catch (e) {
                     console.error('Print QRIS failed', e);
@@ -1701,112 +1722,155 @@ function CheckoutDialog({
             </div>
           </div>
         ) : (
-        <div className="space-y-4">
-          {/* Order summary */}
-          <div className="bg-muted/40 rounded-xl p-4 space-y-1.5 text-sm">
-            <div className="flex justify-between"><span className="text-muted-foreground">Tipe</span><span className="font-medium capitalize">{orderType}</span></div>
-            {selectedTable && <div className="flex justify-between"><span className="text-muted-foreground">Meja</span><span className="font-medium">{selectedTable.name || selectedTable.table_number}</span></div>}
-            {customerName && <div className="flex justify-between"><span className="text-muted-foreground">Pelanggan</span><span className="font-medium">{customerName}</span></div>}
-            <div className="flex justify-between text-muted-foreground text-xs">
-              <span>{cart.reduce((s, i) => s + i.qty, 0)} item · Subtotal</span>
-              <span>{fmt(subtotal)}</span>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          
+          {/* Kolom Kiri: Order Summary & Voucher */}
+          <div className="space-y-4">
+            <div className="bg-muted/40 rounded-xl p-4 space-y-1.5 text-sm">
+              <div className="flex justify-between"><span className="text-muted-foreground">Tipe</span><span className="font-medium capitalize">{orderType}</span></div>
+              {selectedTable && <div className="flex justify-between"><span className="text-muted-foreground">Meja</span><span className="font-medium">{selectedTable.name || selectedTable.table_number}</span></div>}
+              {customerName && <div className="flex justify-between"><span className="text-muted-foreground">Pelanggan</span><span className="font-medium">{customerName}</span></div>}
+              <div className="flex justify-between text-muted-foreground text-xs pt-2 border-t">
+                <span>{cart.reduce((s, i) => s + i.qty, 0)} item · Subtotal</span>
+                <span>{fmt(subtotal)}</span>
+              </div>
+              {discountAmt > 0 && <div className="flex justify-between text-green-600 text-xs"><span>Diskon</span><span>− {fmt(discountAmt)}</span></div>}
+              {taxAmt > 0 && <div className="flex justify-between text-muted-foreground text-xs"><span>Pajak</span><span>{fmt(taxAmt)}</span></div>}
+              <div className="flex justify-between font-bold text-lg border-t pt-2 mt-2">
+                <span>Total</span>
+                <span className="text-primary">{fmt(total)}</span>
+              </div>
             </div>
-            {discountAmt > 0 && <div className="flex justify-between text-green-600 text-xs"><span>Diskon</span><span>− {fmt(discountAmt)}</span></div>}
-            {taxAmt > 0 && <div className="flex justify-between text-muted-foreground text-xs"><span>Pajak</span><span>{fmt(taxAmt)}</span></div>}
-            <div className="flex justify-between font-bold text-lg border-t pt-2">
-              <span>Total</span>
-              <span className="text-primary">{fmt(total)}</span>
+            
+            {/* Voucher Input dipindahkan ke dalam modal (kiri bawah) */}
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Voucher Promo</p>
+              <VoucherInput 
+                subtotal={subtotal} 
+                appliedVoucher={appliedVoucher} 
+                onApplied={onApplied} 
+                onRemove={onRemove} 
+              />
             </div>
           </div>
 
-          {/* Payment methods */}
-          <div>
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Metode Pembayaran</p>
-            <div className="grid grid-cols-3 gap-2">
-              {payMethods.map(m => {
-                const isBalance = m.code === 'balance';
-                const noMember = isBalance && !selectedMember;
-                return (
-                  <button
-                    type="button"
-                    key={m.code}
-                    onClick={() => !noMember && setPaymentMethod(m.code)}
-                    disabled={noMember}
-                    title={noMember ? 'Pilih member terlebih dulu' : undefined}
-                    className={cn(
-                      'flex flex-col items-center justify-center gap-1.5 p-3 rounded-xl border-2 text-xs font-semibold transition-all',
-                      paymentMethod === m.code
-                        ? 'border-primary bg-primary/5 text-primary shadow-sm'
-                        : noMember
-                          ? 'border-border/40 opacity-40 cursor-not-allowed'
-                          : 'border-border hover:border-primary/40'
-                    )}
-                  >
-                    {m.icon?.startsWith('http') || m.icon?.startsWith('/') ? (
-                      <img src={m.icon.startsWith('http') ? m.icon : `/uploads/${m.icon.replace(/^\/uploads\//, '')}`} alt={m.name} className="h-6 w-auto object-contain" />
-                    ) : (
-                      <span className="text-xl">{m.icon || ICONS[m.type] || '💳'}</span>
-                    )}
-                    <span className="text-[10px] text-center leading-tight">{m.name}</span>
-                    {isBalance && selectedMember && (
-                      <span className="text-[9px] text-emerald-600 font-bold">
-                        {fmt(selectedMember.balance || 0)}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
+          {/* Kolom Kanan: Payment Method, Cash Input, Notes */}
+          <div className="space-y-4">
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Metode Pembayaran</p>
+              <div className="grid grid-cols-3 gap-2">
+                {payMethods.map(m => {
+                  const isBalance = m.code === 'balance';
+                  const noMember = isBalance && !selectedMember;
+                  return (
+                    <button
+                      type="button"
+                      key={m.code}
+                      onClick={() => !noMember && setPaymentMethod(m.code)}
+                      disabled={noMember}
+                      title={noMember ? 'Pilih member terlebih dulu' : undefined}
+                      className={cn(
+                        'flex flex-col items-center justify-center gap-1.5 p-3 rounded-xl border-2 text-xs font-semibold transition-all',
+                        paymentMethod === m.code
+                          ? 'border-primary bg-primary/5 text-primary shadow-sm'
+                          : noMember
+                            ? 'border-border/40 opacity-40 cursor-not-allowed'
+                            : 'border-border hover:border-primary/40'
+                      )}
+                    >
+                      {m.icon?.startsWith('http') || m.icon?.startsWith('/') ? (
+                        <img src={m.icon.startsWith('http') ? m.icon : `/uploads/${m.icon.replace(/^\/uploads\//, '')}`} alt={m.name} className="h-6 w-auto object-contain" />
+                      ) : (
+                        <span className="text-xl">{m.icon || ICONS[m.type] || '💳'}</span>
+                      )}
+                      <span className="text-[10px] text-center leading-tight">{m.name}</span>
+                      {isBalance && selectedMember && (
+                        <span className="text-[9px] text-emerald-600 font-bold">
+                          {fmt(selectedMember.balance || 0)}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
 
-              {/* Bayar Nanti */}
-              <button
-                onClick={() => setPaymentMethod('pending')}
-                className={cn(
-                  'flex flex-col items-center justify-center gap-1.5 p-3 rounded-xl border-2 text-xs font-semibold transition-all',
-                  isPendingPay
-                    ? 'border-amber-400 bg-amber-50 text-amber-700 shadow-sm'
-                    : 'border-border hover:border-amber-300 text-muted-foreground hover:text-amber-700'
-                )}
-              >
-                <Clock className="w-5 h-5" />
-                <span className="text-[10px] text-center leading-tight">Bayar Nanti</span>
-              </button>
+                {/* Bayar Nanti */}
+                <button
+                  onClick={() => setPaymentMethod('pending')}
+                  className={cn(
+                    'flex flex-col items-center justify-center gap-1.5 p-3 rounded-xl border-2 text-xs font-semibold transition-all',
+                    isPendingPay
+                      ? 'border-amber-400 bg-amber-50 text-amber-700 shadow-sm'
+                      : 'border-border hover:border-amber-300 text-muted-foreground hover:text-amber-700'
+                  )}
+                >
+                  <Clock className="w-5 h-5" />
+                  <span className="text-[10px] text-center leading-tight">Bayar Nanti</span>
+                </button>
+              </div>
+
+              {isPendingPay && (
+                <div className="mt-2 flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  <Clock className="w-3.5 h-3.5 flex-shrink-0" />
+                  Order akan dibuat dengan status <strong>belum bayar</strong>.
+                </div>
+              )}
             </div>
 
-            {isPendingPay && (
-              <div className="mt-2 flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                <Clock className="w-3.5 h-3.5 flex-shrink-0" />
-                Order akan dibuat dengan status <strong>belum bayar</strong>. Bayar bisa dilakukan nanti di halaman Pesanan.
+            {/* Input Tunai (Hanya jika Cash) */}
+            {paymentMethod === 'cash' && (
+              <div className="bg-primary/5 rounded-xl p-4 space-y-3 border border-primary/20">
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Tunai Diterima</p>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-medium">Rp</span>
+                    <Input 
+                      className="pl-9 font-bold text-lg h-11"
+                      value={cashReceived}
+                      onChange={e => {
+                        const val = e.target.value.replace(/\D/g, '');
+                        setCashReceived(val ? Number(val).toLocaleString('id-ID') : '');
+                      }}
+                      placeholder="0"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-between items-center text-sm">
+                  <span className="font-medium text-muted-foreground">Kembalian:</span>
+                  <span className={cn("font-bold text-lg", changeAmount >= 0 ? "text-emerald-600" : "text-red-500")}>
+                    {changeAmount < 0 ? "-" : ""}{fmt(Math.abs(changeAmount))}
+                  </span>
+                </div>
               </div>
             )}
-          </div>
 
-          {/* Notes */}
-          <div>
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Catatan</p>
-            <Input placeholder="Catatan pesanan…" value={notes} onChange={e => setNotes(e.target.value)} className="h-9 text-sm" />
-          </div>
+            {/* Notes */}
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Catatan</p>
+              <Input placeholder="Catatan pesanan…" value={notes} onChange={e => setNotes(e.target.value)} className="h-9 text-sm" />
+            </div>
 
-          {/* Actions */}
-          <div className="grid grid-cols-3 gap-2 pt-1">
-            <Button variant="outline" onClick={onClose} disabled={placing} className="h-11">Batal</Button>
-            <Button variant="outline" onClick={() => onConfirm(false, true)} disabled={placing} className="h-11 gap-1 text-xs">
-              {placing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Utensils className="w-3.5 h-3.5" />}
-              Dapur
-            </Button>
-            <Button
-              onClick={() => {
-                if (paymentMethod === 'qris') {
-                  setStep('qris');
-                } else {
-                  onConfirm(!isPendingPay, true);
-                }
-              }}
-              disabled={placing}
-              className={cn('h-11 gap-1 text-xs font-semibold', isPendingPay && 'bg-amber-500 hover:bg-amber-600')}
-            >
-              {placing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : isPendingPay ? <Clock className="w-3.5 h-3.5" /> : <Receipt className="w-3.5 h-3.5" />}
-              {paymentMethod === 'qris' ? 'Lanjut QRIS' : (isPendingPay ? 'Simpan Order' : 'Bayar')}
-            </Button>
+            {/* Actions */}
+            <div className="grid grid-cols-3 gap-2 pt-2 border-t mt-2">
+              <Button variant="outline" onClick={onClose} disabled={placing} className="h-11">Batal</Button>
+              <Button variant="outline" onClick={() => onConfirm(false, true, { cashReceived: parseInt(cashReceived.replace(/\D/g, '')) || 0, changeAmount: Math.max(0, changeAmount) })} disabled={placing} className="h-11 gap-1 text-xs px-1">
+                {placing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Utensils className="w-3.5 h-3.5" />}
+                Dapur
+              </Button>
+              <Button
+                onClick={() => {
+                  if (paymentMethod === 'qris') {
+                    setStep('qris');
+                  } else {
+                    onConfirm(!isPendingPay, true, { cashReceived: parseInt(cashReceived.replace(/\D/g, '')) || 0, changeAmount: Math.max(0, changeAmount) });
+                  }
+                }}
+                disabled={placing || (paymentMethod === 'cash' && changeAmount < 0)}
+                className={cn('h-11 gap-1 text-xs font-semibold', isPendingPay && 'bg-amber-500 hover:bg-amber-600')}
+              >
+                {placing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : isPendingPay ? <Clock className="w-3.5 h-3.5" /> : <Receipt className="w-3.5 h-3.5" />}
+                {paymentMethod === 'qris' ? 'Lanjut QRIS' : (isPendingPay ? 'Simpan' : 'Bayar')}
+              </Button>
+            </div>
           </div>
         </div>
         )}
@@ -2087,8 +2151,20 @@ function ShiftCloseModal({ shift, fmt, onClose, onClosed }) {
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState(null);
+  const [preSummary, setPreSummary] = useState(null);
+  const [loadingPre, setLoadingPre] = useState(false);
 
-  const expectedCash = parseFloat(shift.live_expected_cash || shift.opening_cash || 0);
+  useEffect(() => {
+    if (shift && !result) {
+      setLoadingPre(true);
+      api.get(`/shifts/${shift.id}/pre-close-summary`)
+        .then(res => setPreSummary(res.data.summary))
+        .catch(console.error)
+        .finally(() => setLoadingPre(false));
+    }
+  }, [shift, result]);
+
+  const expectedCash = preSummary ? preSummary.expected_cash : parseFloat(shift.live_expected_cash || shift.opening_cash || 0);
   const closingNum   = Number(closingCash) || 0;
   const diff         = closingCash !== '' ? closingNum - expectedCash : null;
 
@@ -2144,10 +2220,35 @@ function ShiftCloseModal({ shift, fmt, onClose, onClosed }) {
           </div>
         ) : (
           <div className="space-y-4">
+            {/* Warnings */}
+            {!loadingPre && preSummary && (preSummary.unpaid_orders?.length > 0 || preSummary.active_tables?.length > 0) && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-amber-800 text-sm space-y-2">
+                <div className="flex items-start gap-2 font-semibold">
+                  <AlertCircle className="w-4 h-4 mt-0.5 text-amber-600 shrink-0" />
+                  <p>Terdapat transaksi yang belum selesai!</p>
+                </div>
+                {preSummary.unpaid_orders?.length > 0 && (
+                  <p className="text-xs ml-6 font-medium text-amber-700">
+                    &bull; {preSummary.unpaid_orders.length} pesanan belum dibayar (Unpaid)
+                  </p>
+                )}
+                {preSummary.in_progress_orders?.length > 0 && (
+                  <p className="text-xs ml-6 font-medium text-amber-700">
+                    &bull; {preSummary.in_progress_orders.length} pesanan sedang diproses dapur (In-progress)
+                  </p>
+                )}
+                {preSummary.active_tables?.length > 0 && (
+                  <p className="text-xs ml-6 font-medium text-amber-700">
+                    &bull; {preSummary.active_tables.length} meja masih terisi
+                  </p>
+                )}
+              </div>
+            )}
+
             <div className="bg-muted/30 rounded-lg p-3 grid grid-cols-3 gap-2 text-center text-xs">
-              <div><p className="text-muted-foreground">Orders</p><p className="font-bold text-base">{shift.live_total_orders ?? '—'}</p></div>
-              <div><p className="text-muted-foreground">Revenue</p><p className="font-bold text-sm">{fmt(shift.live_total_revenue)}</p></div>
-              <div><p className="text-muted-foreground">Kas Exp.</p><p className="font-bold text-sm">{fmt(expectedCash)}</p></div>
+              <div><p className="text-muted-foreground">Orders</p><p className="font-bold text-base">{loadingPre ? <Loader2 className="w-3 h-3 animate-spin mx-auto" /> : (preSummary ? preSummary.total_orders || shift.live_total_orders : shift.live_total_orders ?? '—')}</p></div>
+              <div><p className="text-muted-foreground">Revenue</p><p className="font-bold text-sm">{loadingPre ? <Loader2 className="w-3 h-3 animate-spin mx-auto" /> : fmt(preSummary ? preSummary.total_revenue : shift.live_total_revenue)}</p></div>
+              <div><p className="text-muted-foreground">Kas Exp.</p><p className="font-bold text-sm">{loadingPre ? <Loader2 className="w-3 h-3 animate-spin mx-auto" /> : fmt(expectedCash)}</p></div>
             </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground mb-1 block">Kas Aktual di Laci (Rp) *</label>
