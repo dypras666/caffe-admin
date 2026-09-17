@@ -9,6 +9,7 @@ import { Badge } from '../components/ui/badge';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../components/ui/select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/table';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, Tooltip, ResponsiveContainer, Legend,
@@ -18,6 +19,7 @@ import {
   FileSpreadsheet, FileText,
 } from 'lucide-react';
 import { exportReportSummaryExcel, exportProductsExcel, exportPDF, exportExcel } from '../lib/export';
+import { OrderDetailPanel } from './OrdersPage';
 
 /* ─── helpers ─────────────────────────────────────────────────────────────── */
 const formatRp = (v) => `Rp ${Number(v || 0).toLocaleString('id')}`;
@@ -27,6 +29,13 @@ const daysAgo = (n) => {
   const d = new Date();
   d.setDate(d.getDate() - n);
   return d.toISOString().slice(0, 10);
+};
+
+const getCafeName = () => {
+  if (typeof window !== 'undefined') {
+    return sessionStorage.getItem('admin_cafe_name') || 'Laporan Cafe';
+  }
+  return 'Laporan Cafe';
 };
 const startOfMonth = () => {
   const d = new Date();
@@ -166,17 +175,23 @@ function TabRingkasan() {
             onClick={() => exportReportSummaryExcel(summary, `${from}_${to}`)}>
             <FileSpreadsheet className="w-3.5 h-3.5" />Excel
           </Button>
-          <Button size="sm" variant="outline" className="gap-1.5 h-8 text-xs text-red-700 border-red-300 hover:bg-red-50"
-            onClick={() => exportPDF({ title:'Laporan Penjualan', subtitle:'Café Azzura', period:`${from} s/d ${to}`, filename:'laporan_ringkasan',
-              tables:[{ title:'Ringkasan', columns:['Metrik','Nilai'], rows:[
-                ['Total Penjualan',`Rp ${Number(summary.total_revenue||0).toLocaleString('id')}`],
-                ['Total Transaksi',String(summary.total_orders||0)],
-                ['Rata-rata Order',`Rp ${Number(summary.avg_order_value||summary.avg_order||0).toLocaleString('id')}`],
-                ['Item Terjual',String(summary.items_sold||0)],
-              ]},
-              ...(summary.payment_breakdown?.length ? [{title:'Per Metode Bayar', columns:['Metode','Transaksi','Total'],
-                rows:(summary.payment_breakdown||[]).map(p=>[p.payment_method,p.cnt||p.count||0,`Rp ${Number(p.total||0).toLocaleString('id')}`])}] : []),
-            ]})}>
+          <Button size="sm" variant="outline" className="gap-1.5 text-xs h-8 text-red-700 border-red-300 hover:bg-red-50" onClick={() => {
+            exportPDF({
+              title: 'Laporan Penjualan', subtitle: getCafeName(), period: `${from} s/d ${to}`, filename: 'laporan_ringkasan',
+              tables: [{
+                title: 'Ringkasan', columns: ['Metrik', 'Nilai'], rows: [
+                  ['Total Penjualan', `Rp ${Number(summary.total_revenue || 0).toLocaleString('id')}`],
+                  ['Total Transaksi', String(summary.total_orders || 0)],
+                  ['Rata-rata Order', `Rp ${Number(summary.avg_order_value || summary.avg_order || 0).toLocaleString('id')}`],
+                  ['Item Terjual', String(summary.items_sold || 0)],
+                ]
+              },
+              ...(summary.payment_breakdown?.length ? [{
+                title: 'Per Metode Bayar', columns: ['Metode', 'Transaksi', 'Total'],
+                rows: (summary.payment_breakdown || []).map(p => [p.payment_method, p.cnt || p.count || 0, `Rp ${Number(p.total || 0).toLocaleString('id')}`])
+              }] : []),
+              ]
+            })}}>
             <FileText className="w-3.5 h-3.5" />PDF
           </Button>
         </>)}
@@ -615,7 +630,7 @@ function TabPerStaff() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-3">
         <DateRangePicker from={from} to={to} onFrom={setFrom} onTo={setTo} />
-        <BranchCashierFilter branchId={branchId} cashierId="all" onBranch={setBranchId} onCashier={() => {}} showCashier={false} />
+        <BranchCashierFilter branchId={branchId} cashierId="all" onBranch={setBranchId} onCashier={() => { }} showCashier={false} />
         <Button size="sm" variant="outline" onClick={refetch} className="gap-1.5 h-8 text-xs">
           <RefreshCw className="w-3.5 h-3.5" /> Refresh
         </Button>
@@ -675,7 +690,7 @@ function TabPerShift() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-3">
         <DateRangePicker from={from} to={to} onFrom={setFrom} onTo={setTo} />
-        <BranchCashierFilter branchId={branchId} cashierId="all" onBranch={setBranchId} onCashier={() => {}} showCashier={false} />
+        <BranchCashierFilter branchId={branchId} cashierId="all" onBranch={setBranchId} onCashier={() => { }} showCashier={false} />
         <Button size="sm" variant="outline" onClick={refetch} className="gap-1.5 h-8 text-xs">
           <RefreshCw className="w-3.5 h-3.5" /> Refresh
         </Button>
@@ -732,6 +747,327 @@ function TabPerShift() {
   );
 }
 
+/* ─── Tab — Per Pembayaran ────────────────────────────────────────────────── */
+function TabPerPembayaran() {
+  const [from, setFrom] = useState(() => daysAgo(29));
+  const [to, setTo] = useState(todayStr);
+  const [branchId, setBranchId] = useState('all');
+  const [cashierId, setCashierId] = useState('all');
+  const [selectedMethod, setSelectedMethod] = useState(null);
+
+  const qs = new URLSearchParams({ date_from: from, date_to: to });
+  if (branchId !== 'all') qs.set('branch_id', branchId);
+  if (cashierId !== 'all') qs.set('cashier_id', cashierId);
+
+  const { data, loading, refetch } = useFetch(`/reports/summary?${qs}`);
+  const paymentBreakdown = data?.payment_breakdown || [];
+
+  const chartData = paymentBreakdown.map(p => ({
+    name: String(p.payment_method).toUpperCase(),
+    revenue: Number(p.total || 0),
+    count: Number(p.count || 0)
+  }));
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center gap-3">
+        <DateRangePicker from={from} to={to} onFrom={setFrom} onTo={setTo} />
+        <BranchCashierFilter branchId={branchId} cashierId={cashierId} onBranch={(v) => { setBranchId(v); setCashierId('all'); }} onCashier={setCashierId} />
+        <Button size="sm" variant="outline" onClick={refetch} className="gap-1.5 h-8 text-xs">
+          <RefreshCw className="w-3.5 h-3.5" /> Refresh
+        </Button>
+      </div>
+
+      {loading ? <LoadingCenter /> : (
+        <>
+          <Card>
+            <CardHeader><CardTitle className="text-sm">Revenue per Metode Pembayaran</CardTitle></CardHeader>
+            <CardContent>
+              {chartData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={chartData} layout="vertical" margin={{ left: 40 }}>
+                    <XAxis type="number" tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
+                    <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} />
+                    <Tooltip formatter={(v) => formatRp(v)} />
+                    <Bar dataKey="revenue" fill="#6366f1" radius={[0, 4, 4, 0]} barSize={24} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : <EmptyState />}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Metode Pembayaran</TableHead>
+                    <TableHead className="text-right">Transaksi</TableHead>
+                    <TableHead className="text-right">Revenue</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {paymentBreakdown.length > 0 ? paymentBreakdown.map((r, i) => (
+                    <TableRow key={i} onClick={() => setSelectedMethod(r.payment_method)} className="cursor-pointer hover:bg-muted/50">
+                      <TableCell className="font-medium">{String(r.payment_method).toUpperCase()}</TableCell>
+                      <TableCell className="text-right text-primary underline underline-offset-2">{Number(r.count).toLocaleString('id')}</TableCell>
+                      <TableCell className="text-right text-emerald-600 font-semibold">{formatRp(r.total)}</TableCell>
+                    </TableRow>
+                  )) : (
+                    <TableRow><TableCell colSpan={3} className="text-center py-8 text-muted-foreground">Data tidak ditemukan</TableCell></TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </>
+      )}
+
+      {selectedMethod && (
+        <PaymentTransactionsDialog
+          method={selectedMethod}
+          from={from}
+          to={to}
+          branchId={branchId}
+          cashierId={cashierId}
+          onClose={() => setSelectedMethod(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function PaymentTransactionsDialog({ method, from, to, branchId, cashierId, onClose }) {
+  const qs = new URLSearchParams({ date_from: from, date_to: to, limit: '500' });
+  if (branchId !== 'all') qs.set('branch_id', branchId);
+  if (cashierId !== 'all') qs.set('cashier_id', cashierId);
+
+  const { data, loading } = useFetch(`/orders?${qs}`);
+  const [selectedOrderId, setSelectedOrderId] = useState(null);
+
+  const orders = (data?.orders || []).filter(o =>
+    String(o.payment_method).toLowerCase() === String(method).toLowerCase() &&
+    o.order_status !== 'cancelled' &&
+    ['paid', 'partial'].includes(o.payment_status)
+  );
+
+  const doExportExcel = () => {
+    if (!orders.length) return;
+    const sheet = {
+      name: 'Transaksi ' + String(method).toUpperCase(),
+      columns: ['Tanggal', 'Order ID', 'Pelanggan', 'Metode Bayar', 'Status', 'Total'],
+      rows: orders.map(o => [
+        new Date(o.created_at).toLocaleString('id-ID'),
+        o.order_number,
+        o.customer_name || 'Walk-in',
+        String(o.payment_method || '-').toUpperCase(),
+        String(o.order_status || '-').toUpperCase(),
+        Number(o.total || 0)
+      ])
+    };
+    exportExcel([sheet], `Transaksi_${method}_${from}_${to}`);
+  };
+
+  const doExportPDF = () => {
+    if (!orders.length) return;
+    exportPDF({
+      title: `Laporan Transaksi: ${String(method).toUpperCase()}`,
+      subtitle: getCafeName(),
+      period: `${from} s/d ${to}`,
+      filename: `transaksi_${method}_${from}_${to}`,
+      tables: [{
+        title: `Daftar Transaksi ${String(method).toUpperCase()}`,
+        columns: ['Tanggal', 'Order ID', 'Pelanggan', 'Status', 'Total'],
+        rows: orders.map(o => [
+          new Date(o.created_at).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' }),
+          o.order_number,
+          o.customer_name || 'Walk-in',
+          String(o.order_status || '-').toUpperCase(),
+          `Rp ${Number(o.total || 0).toLocaleString('id')}`
+        ])
+      }]
+    });
+  };
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
+        <DialogHeader className="flex flex-row items-center justify-between">
+          <DialogTitle>Transaksi Pembayaran: {String(method).toUpperCase()}</DialogTitle>
+          {!loading && orders.length > 0 && (
+            <div className="flex items-center gap-2 pr-6">
+              <Button size="sm" variant="outline" className="gap-1.5 h-8 text-xs text-green-700 border-green-300 hover:bg-green-50" onClick={doExportExcel}>
+                <FileSpreadsheet className="w-3.5 h-3.5" /> Excel
+              </Button>
+              <Button size="sm" variant="outline" className="gap-1.5 h-8 text-xs text-red-700 border-red-300 hover:bg-red-50" onClick={doExportPDF}>
+                <FileText className="w-3.5 h-3.5" /> PDF
+              </Button>
+            </div>
+          )}
+        </DialogHeader>
+        <div className="flex-1 overflow-y-auto min-h-0 relative -mx-6 px-6 pt-2">
+          {loading ? <LoadingCenter /> : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Tanggal</TableHead>
+                  <TableHead>Order ID</TableHead>
+                  <TableHead>Pelanggan</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Total</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {orders.length > 0 ? orders.map(o => (
+                  <TableRow key={o.id} onClick={() => setSelectedOrderId(o.id)} className="cursor-pointer hover:bg-muted/50">
+                    <TableCell className="text-xs">{new Date(o.created_at).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' })}</TableCell>
+                    <TableCell className="font-medium text-xs">{o.order_number}</TableCell>
+                    <TableCell className="text-xs">{o.customer_name || 'Walk-in'}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="text-[9px] uppercase py-0">{o.order_status}</Badge>
+                    </TableCell>
+                    <TableCell className="text-right font-medium text-sm">{formatRp(o.total)}</TableCell>
+                  </TableRow>
+                )) : (
+                  <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">Tidak ada transaksi</TableCell></TableRow>
+                )}
+              </TableBody>
+            </Table>
+          )}
+        </div>
+
+        {selectedOrderId && (
+          <OrderDetailPanel
+            orderId={selectedOrderId}
+            onClose={() => setSelectedOrderId(null)}
+          />
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ─── Tab — Transaksi ─────────────────────────────────────────────────────── */
+function TabTransaksi() {
+  const [from, setFrom] = useState(() => daysAgo(0));
+  const [to, setTo] = useState(todayStr);
+  const [branchId, setBranchId] = useState('all');
+  const [cashierId, setCashierId] = useState('all');
+
+  const qs = new URLSearchParams({ date_from: from, date_to: to, limit: '500' });
+  if (branchId !== 'all') qs.set('branch_id', branchId);
+  if (cashierId !== 'all') qs.set('cashier_id', cashierId);
+
+  const { data, loading, refetch } = useFetch(`/orders?${qs}`);
+  const orders = data?.orders || [];
+
+  const [selectedOrderId, setSelectedOrderId] = useState(null);
+
+  const doExportExcel = () => {
+    if (!orders.length) return;
+    const sheet = {
+      name: 'Transaksi',
+      columns: ['Tanggal', 'Order ID', 'Pelanggan', 'Metode Bayar', 'Status', 'Total'],
+      rows: orders.map(o => [
+        new Date(o.created_at).toLocaleString('id-ID'),
+        o.order_number,
+        o.customer_name || 'Walk-in',
+        String(o.payment_method || '-').toUpperCase(),
+        String(o.order_status || '-').toUpperCase(),
+        Number(o.total || 0)
+      ])
+    };
+    exportExcel([sheet], `Transaksi_${from}_${to}`);
+  };
+
+  const doExportPDF = () => {
+    if (!orders.length) return;
+    exportPDF({
+      title: 'Laporan Transaksi',
+      subtitle: getCafeName(),
+      period: `${from} s/d ${to}`,
+      filename: `transaksi_${from}_${to}`,
+      tables: [{
+        title: 'Daftar Transaksi',
+        columns: ['Tanggal', 'Order ID', 'Pelanggan', 'Metode', 'Status', 'Total'],
+        rows: orders.map(o => [
+          new Date(o.created_at).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' }),
+          o.order_number,
+          o.customer_name || 'Walk-in',
+          String(o.payment_method || '-').toUpperCase(),
+          String(o.order_status || '-').toUpperCase(),
+          `Rp ${Number(o.total || 0).toLocaleString('id')}`
+        ])
+      }]
+    });
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center gap-3">
+        <DateRangePicker from={from} to={to} onFrom={setFrom} onTo={setTo} />
+        <BranchCashierFilter branchId={branchId} cashierId={cashierId} onBranch={(v) => { setBranchId(v); setCashierId('all'); }} onCashier={setCashierId} />
+        <Button size="sm" variant="outline" onClick={refetch} className="gap-1.5 h-8 text-xs">
+          <RefreshCw className="w-3.5 h-3.5" /> Refresh
+        </Button>
+        {!loading && orders.length > 0 && (
+          <>
+            <Button size="sm" variant="outline" className="gap-1.5 h-8 text-xs text-green-700 border-green-300 hover:bg-green-50" onClick={doExportExcel}>
+              <FileSpreadsheet className="w-3.5 h-3.5" /> Excel
+            </Button>
+            <Button size="sm" variant="outline" className="gap-1.5 h-8 text-xs text-red-700 border-red-300 hover:bg-red-50" onClick={doExportPDF}>
+              <FileText className="w-3.5 h-3.5" /> PDF
+            </Button>
+          </>
+        )}
+      </div>
+
+      <Card>
+        <CardContent className="p-0">
+          {loading ? <LoadingCenter /> : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Tanggal</TableHead>
+                  <TableHead>Order ID</TableHead>
+                  <TableHead>Pelanggan/Meja</TableHead>
+                  <TableHead>Metode</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Total</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {orders.length > 0 ? orders.map(o => (
+                  <TableRow key={o.id} onClick={() => setSelectedOrderId(o.id)} className="cursor-pointer hover:bg-muted/50">
+                    <TableCell className="text-xs">{new Date(o.created_at).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' })}</TableCell>
+                    <TableCell className="font-medium text-xs">{o.order_number}</TableCell>
+                    <TableCell className="text-xs">{o.customer_name || 'Walk-in'}</TableCell>
+                    <TableCell className="text-xs">{String(o.payment_method || '-').toUpperCase()}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="text-[9px] uppercase py-0">{o.order_status}</Badge>
+                    </TableCell>
+                    <TableCell className="text-right font-medium text-sm">{formatRp(o.total)}</TableCell>
+                  </TableRow>
+                )) : (
+                  <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Tidak ada transaksi</TableCell></TableRow>
+                )}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      {selectedOrderId && (
+        <OrderDetailPanel
+          orderId={selectedOrderId}
+          onClose={() => setSelectedOrderId(null)}
+          onStatusUpdated={refetch}
+        />
+      )}
+    </div>
+  );
+}
+
 /* ─── Main Page ───────────────────────────────────────────────────────────── */
 export default function ReportsPage() {
   const { user } = useAuth();
@@ -769,6 +1105,8 @@ export default function ReportsPage() {
           <TabsTrigger value="produk">Per Produk</TabsTrigger>
           <TabsTrigger value="jam">Per Jam</TabsTrigger>
           <TabsTrigger value="meja">Per Meja</TabsTrigger>
+          <TabsTrigger value="pembayaran">Pembayaran</TabsTrigger>
+          <TabsTrigger value="transaksi">Transaksi</TabsTrigger>
           {isAdmin && <TabsTrigger value="staff">Per Kasir</TabsTrigger>}
           {shiftEnabled && <TabsTrigger value="shift">Shift</TabsTrigger>}
         </TabsList>
@@ -777,6 +1115,8 @@ export default function ReportsPage() {
         <TabsContent value="produk" className="mt-5"><TabPerProduk /></TabsContent>
         <TabsContent value="jam" className="mt-5"><TabPerJam /></TabsContent>
         <TabsContent value="meja" className="mt-5"><TabPerMeja /></TabsContent>
+        <TabsContent value="pembayaran" className="mt-5"><TabPerPembayaran /></TabsContent>
+        <TabsContent value="transaksi" className="mt-5"><TabTransaksi /></TabsContent>
         {isAdmin && <TabsContent value="staff" className="mt-5"><TabPerStaff /></TabsContent>}
         {shiftEnabled && <TabsContent value="shift" className="mt-5"><TabPerShift /></TabsContent>}
       </Tabs>

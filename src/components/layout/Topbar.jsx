@@ -4,10 +4,28 @@ import { useAuth } from '../../context/AuthContext';
 import { cn } from '../../lib/utils';
 import DevicePrinterSettings from '../DevicePrinterSettings';
 import { getDevicePrinter } from '../../lib/printer';
+import { useSocket } from '../../context/SocketContext';
+import { useToast } from '../../components/ui/toast';
+import { useState, useEffect } from 'react';
 
 export default function Topbar({ title }) {
   const { collapsed, toggle, setMobileOpen } = useSidebar();
   const { user, logout } = useAuth();
+  const socket = useSocket();
+  const toast = useToast();
+  const [hasNewOrder, setHasNewOrder] = useState(false);
+
+  useEffect(() => {
+    if (!socket) return;
+    const handleOrderCreated = (data) => {
+      setHasNewOrder(true);
+      toast.info(`Pesanan Baru: ${data.order_number || 'Meja ' + data.table_number}`, 5000);
+    };
+    socket.on('order_created', handleOrderCreated);
+    return () => {
+      socket.off('order_created', handleOrderCreated);
+    };
+  }, [socket]);
 
   return (
     <header className="h-16 border-b bg-card flex items-center px-4 gap-3 sticky top-0 z-30">
@@ -45,8 +63,17 @@ export default function Topbar({ title }) {
           </button>
         } />
 
-        <button className="p-2 rounded-lg hover:bg-secondary text-muted-foreground relative">
+        <button 
+          className="p-2 rounded-lg hover:bg-secondary text-muted-foreground relative"
+          onClick={() => setHasNewOrder(false)}
+        >
           <Bell className="w-4 h-4" />
+          {hasNewOrder && (
+            <span className="absolute top-1.5 right-2 flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+            </span>
+          )}
         </button>
 
         <div className="flex items-center gap-2 border rounded-lg px-3 py-1.5 text-sm">

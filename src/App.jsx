@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { PermissionsProvider } from './context/PermissionsContext';
+import { SocketProvider } from './context/SocketContext';
 import { ToastProvider } from './components/ui/toast';
 import { SidebarProvider } from './context/SidebarContext';
 import AppLayout from './components/layout/AppLayout';
@@ -112,9 +113,11 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <PermissionsProvider>
-          <ToastProvider>
-            <AppRoutes />
-          </ToastProvider>
+          <SocketProvider>
+            <ToastProvider>
+              <AppRoutes />
+            </ToastProvider>
+          </SocketProvider>
         </PermissionsProvider>
       </AuthProvider>
     </BrowserRouter>

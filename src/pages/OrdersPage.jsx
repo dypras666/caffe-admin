@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useFetch } from '../hooks/useApi';
+import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
 import { usePermissions } from '../context/PermissionsContext';
 import { useShiftGuard } from '../hooks/useShiftGuard';
@@ -16,13 +17,13 @@ import { ServerSelect } from '../components/ui/server-select';
 import { Loader2, RefreshCw, ChevronLeft, ChevronRight, ShoppingBag, TrendingUp, Clock, XCircle, Printer, X, Plus, Minus, Trash2, AlertCircle, Scissors, FileSpreadsheet, FileText, Wallet } from 'lucide-react';
 import { exportOrdersPDF, exportOrdersExcel } from '../lib/export';
 
-const STATUS_OPTIONS = ['all', 'pending', 'preparing', 'ready', 'completed', 'cancelled'];
-const NEXT_STATUS = { pending: 'preparing', preparing: 'ready', ready: 'completed' };
-const STATUS_CLS = {
+export const STATUS_OPTIONS = ['all', 'pending', 'preparing', 'ready', 'completed', 'cancelled'];
+export const NEXT_STATUS = { pending: 'preparing', preparing: 'ready', ready: 'completed' };
+export const STATUS_CLS = {
   pending: 'badge-status-pending', preparing: 'badge-status-preparing',
   ready: 'badge-status-ready', completed: 'badge-status-completed', cancelled: 'badge-status-cancelled',
 };
-const STATUS_LABEL = {
+export const STATUS_LABEL = {
   pending: 'Pending', preparing: 'Diproses', ready: 'Siap',
   completed: 'Selesai', cancelled: 'Dibatalkan',
 };
@@ -197,7 +198,7 @@ function CancelRequestsPanel({ onClose, onUpdated }) {
   );
 }
 
-function OrderDetailPanel({ orderId, onClose, onStatusUpdated, autoOpenPayment }) {
+export function OrderDetailPanel({ orderId, onClose, onStatusUpdated, autoOpenPayment }) {
   const { can } = usePermissions();
   const navigate = useNavigate();
   const canUpdateStatus = can('update_status', 'orders');
@@ -837,6 +838,7 @@ export default function OrdersPage() {
   const { user } = useAuth();
   const { can } = usePermissions();
   const { shiftRequired } = useShiftGuard();
+  const socket = useSocket();
   const isAdmin = user?.role === 'admin';
   const canUpdateStatus = can('update_status', 'orders');
   const canCancel = can('cancel', 'orders');
@@ -859,6 +861,17 @@ export default function OrdersPage() {
     branchFilter !== 'all' ? `branch_id=${branchFilter}` : '',
   ].filter(Boolean).join('&');
   const { data, loading, refetch } = useFetch(`/orders?${qs}`);
+  
+  useEffect(() => {
+    if (!socket) return;
+    const handleRefresh = () => refetch();
+    socket.on('order_created', handleRefresh);
+    socket.on('order_updated', handleRefresh);
+    return () => {
+      socket.off('order_created', handleRefresh);
+      socket.off('order_updated', handleRefresh);
+    };
+  }, [socket, refetch]);
   const { data: usersData } = useFetch(isAdmin ? '/users?role=kasir&limit=50' : null);
   const { data: branchData } = useFetch('/branches');
 

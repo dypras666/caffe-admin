@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useFetch } from '../hooks/useApi';
+import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
 import { useShiftGuard } from '../hooks/useShiftGuard';
 import api from '../lib/api';
@@ -44,7 +45,21 @@ export default function TableOrderPage() {
   const { shiftRequired } = useShiftGuard();
   const [roomFilter, setRoomFilter] = useState('all');
   const [selectedTable, setSelectedTable] = useState(null);
+  const socket = useSocket();
   const { data: tablesData, loading: loadingTables, refetch: refetchTables } = useFetch('/tables');
+
+  useEffect(() => {
+    if (!socket) return;
+    const handleRefresh = () => refetchTables();
+    socket.on('table_status_changed', handleRefresh);
+    socket.on('order_created', handleRefresh);
+    socket.on('order_updated', handleRefresh);
+    return () => {
+      socket.off('table_status_changed', handleRefresh);
+      socket.off('order_created', handleRefresh);
+      socket.off('order_updated', handleRefresh);
+    };
+  }, [socket, refetchTables]);
   const { data: roomsData } = useFetch('/rooms');
   const { data: branchesData } = useFetch('/branches');
   const currentBranch = currentUser?.branch_id

@@ -1,3 +1,4 @@
+import jsQR from 'jsqr';
 import { useState, useRef } from 'react';
 import { useFetch } from '../hooks/useApi';
 import api from '../lib/api';
@@ -16,6 +17,20 @@ function formatRp(v) { return `Rp ${Number(v || 0).toLocaleString('id')}`; }
 function formatDate(d) { return new Date(d).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' }); }
 
 const TYPE_LABEL = { cash: 'Tunai', digital: 'Digital', transfer: 'Transfer', wallet: 'Dompet' };
+
+const parseQris = (str) => {
+  let idx = 0;
+  const tags = {};
+  while (idx < str.length) {
+    const tag = str.substring(idx, idx + 2);
+    const len = parseInt(str.substring(idx + 2, idx + 4), 10);
+    if (isNaN(len)) break;
+    const val = str.substring(idx + 4, idx + 4 + len);
+    tags[tag] = val;
+    idx += 4 + len;
+  }
+  return tags;
+};
 const EMPTY_METHOD = { name: '', code: '', type: 'digital', description: '', icon: '', sort_order: 99 };
 
 export default function PaymentsPage() {
@@ -44,15 +59,18 @@ function PaymentMethodsTab() {
   const [saving, setSaving] = useState(false);
   const [iconPreview, setIconPreview] = useState(null);
   const [iconFile, setIconFile] = useState(null);
+  const [extractedQris, setExtractedQris] = useState(null);
+  const [extractedMerchant, setExtractedMerchant] = useState(null);
   const fileRef = useRef();
 
   const methods = data?.methods || [];
 
-  const openCreate = () => { setForm(EMPTY_METHOD); setEditId(null); setIconPreview(null); setIconFile(null); setOpen(true); };
+  const openCreate = () => { setForm(EMPTY_METHOD); setEditId(null); setIconPreview(null); setIconFile(null); setExtractedQris(null); setExtractedMerchant(null); setOpen(true); };
   const openEdit = (m) => {
     setForm({ name: m.name, code: m.code, type: m.type, description: m.description || '', icon: m.icon || '', sort_order: m.sort_order });
     setEditId(m.id);
     setIconPreview(m.icon && m.icon.startsWith('http') ? m.icon : null);
+    setExtractedQris(null); setExtractedMerchant(null);
     setOpen(true);
   };
 
@@ -61,8 +79,50 @@ function PaymentMethodsTab() {
     if (!file) return;
     setIconFile(file);
     const reader = new FileReader();
-    reader.onload = (ev) => setIconPreview(ev.target.result);
+    reader.onload = (ev) => {
+      setIconPreview(ev.target.result);
+      if (form.code?.toLowerCase() === 'qris' || form.name?.toLowerCase().includes('qris')) {
+        extractQRFromImage(ev.target.result);
+      }
+    };
     reader.readAsDataURL(file);
+  };
+
+  const extractQRFromImage = (imgSrc) => {
+    if (!imgSrc) return;
+    const img = new window.Image();
+    img.crossOrigin = 'Anonymous';
+    img.onload = async () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, img.width, img.height);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const code = jsQR(imageData.data, imageData.width, imageData.height);
+      if (code && code.data) {
+        try {
+          const parsed = parseQris(code.data);
+          setExtractedQris(code.data);
+          setExtractedMerchant({ name: parsed['59'] || '-', city: parsed['60'] || '-' });
+          
+          await api.put('/settings', { settings: [{ key: 'qris_string', value: code.data }] });
+          toast.success('String QRIS berhasil diekstrak dan disimpan!');
+        } catch (err) {
+          toast.error('Gagal menyimpan string QRIS');
+        }
+      } else {
+        toast.error('QRIS tidak terdeteksi pada gambar ini');
+      }
+    };
+    img.onerror = () => toast.error('Gagal memuat gambar untuk diekstrak');
+    
+    if (imgSrc.startsWith('http')) {
+      const baseUrl = api.defaults.baseURL || '/api';
+      img.src = `${baseUrl}/media/proxy?url=${encodeURIComponent(imgSrc)}`;
+    } else {
+      img.src = imgSrc;
+    }
   };
 
   const handleSave = async (e) => {
@@ -84,6 +144,8 @@ function PaymentMethodsTab() {
       setOpen(false);
       setIconFile(null);
       setIconPreview(null);
+      setExtractedQris(null);
+      setExtractedMerchant(null);
       refetch();
     } catch (err) {
       toast.error(err.response?.data?.error || 'Gagal menyimpan');
@@ -185,15 +247,36 @@ function PaymentMethodsTab() {
                 </div>
                 <div className="flex-1">
                   <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleIconFile} />
-                  <Button type="button" variant="outline" size="sm" onClick={() => fileRef.current?.click()} className="gap-1.5 text-xs">
-                    <Upload className="w-3 h-3" />Upload Gambar
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button type="button" variant="outline" size="sm" onClick={() => fileRef.current?.click()} className="gap-1.5 text-xs">
+                      <Upload className="w-3 h-3" />Upload Gambar
+                    </Button>
+                    {(form.code?.toLowerCase() === 'qris' || form.name?.toLowerCase().includes('qris')) && iconPreview && (
+                      <Button type="button" variant="secondary" size="sm" onClick={() => extractQRFromImage(iconPreview)} className="gap-1.5 text-xs">
+                        Ambil Kode QR
+                      </Button>
+                    )}
+                  </div>
                   {!form.icon && !iconFile && (
                     <p className="text-xs text-red-500 mt-1">Wajib upload gambar</p>
                   )}
                 </div>
               </div>
             </div>
+
+            {extractedQris && (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3 space-y-2 mt-2">
+                <p className="text-xs font-semibold text-green-700 flex items-center gap-1.5"><Star className="w-3.5 h-3.5 fill-green-700" /> Ekstraksi QRIS Berhasil</p>
+                <div className="grid grid-cols-[80px_1fr] gap-x-2 gap-y-1 text-[11px] text-green-800">
+                  <span className="opacity-70">Nama Usaha:</span>
+                  <span className="font-medium truncate" title={extractedMerchant?.name}>{extractedMerchant?.name}</span>
+                  <span className="opacity-70">Kota:</span>
+                  <span className="font-medium truncate" title={extractedMerchant?.city}>{extractedMerchant?.city}</span>
+                  <span className="opacity-70">Data String:</span>
+                  <span className="font-mono truncate" title={extractedQris}>{extractedQris}</span>
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2">

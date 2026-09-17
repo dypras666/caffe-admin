@@ -218,7 +218,7 @@ export function getDevicePrinter(type) {
 // ─── ESC/POS encoder ─────────────────────────────────────────
 // Converts receipt HTML text content to ESC/POS byte commands
 export function buildEscPos(receipt, printer) {
-  const { shop_name, address, phone, order, items, currency = 'Rp' } = receipt;
+  const { shop_name, address, phone, order, items, currency = 'Rp', qrisOnly, qris, amount } = receipt;
   const charW = printer?.char_per_line || 42;
 
   const ESC = 0x1B;
@@ -229,7 +229,7 @@ export function buildEscPos(receipt, printer) {
   const push  = (...bs) => bytes.push(...bs);
   const text  = (s) => bytes.push(...enc.encode(s));
   const line  = (s = '') => { text(s); push(0x0A); };
-  const divider = () => line('─'.repeat(charW));
+  const divider = () => line('-'.repeat(charW));
 
   const pad = (left, right, w = charW) => {
     const gap = w - left.length - right.length;
@@ -248,7 +248,40 @@ export function buildEscPos(receipt, printer) {
   // Header — bold + center
   push(ESC, 0x61, 0x01);        // ESC a 1 — center align
   push(ESC, 0x45, 0x01);        // ESC E 1 — bold on
-  const headerLines = (printer?.header_text || shop_name || 'Cafe').split('\n');
+
+  if (qrisOnly) {
+    line(center('TAGIHAN PEMBAYARAN'));
+    push(ESC, 0x45, 0x00); // bold off
+    line();
+    line(center('Total Pembayaran:'));
+    push(ESC, 0x45, 0x01); // bold on
+    line(center(money(amount)));
+    push(ESC, 0x45, 0x00); // bold off
+    line();
+    line(center('Silakan scan QRIS di bawah ini:'));
+    line();
+    
+    if (qris) {
+      const len = qris.length + 3;
+      const pL = len & 0xFF;
+      const pH = (len >> 8) & 0xFF;
+      
+      push(GS, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00); // Select model 2
+      push(GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, 0x08);       // Size (0x01 to 0x10, 8 is large)
+      push(GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x31);       // Error correction L (0x31 = L)
+      push(GS, 0x28, 0x6B, pL, pH, 0x31, 0x50, 0x30);           // Store data
+      text(qris);
+      push(GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30);       // Print QR
+      line();
+      line();
+    }
+    
+    push(0x0A, 0x0A, 0x0A);       // feed
+    push(GS, 0x56, 0x41, 0x00);   // partial cut
+    return new Uint8Array(bytes);
+  }
+
+  const headerLines = (printer?.header_text || shop_name || 'Café Azzura').split('\n');
   headerLines.forEach(l => line(l));
   push(ESC, 0x45, 0x00);        // ESC E 0 — bold off
   if (address) line(address);
@@ -626,5 +659,41 @@ export function buildKitchenCSS(paperWidth) {
       body { width: 100%; }
       .cut { display: none; }
     }
+  `;
+}
+
+/**
+ * Build QRIS print HTML for given paper size
+ */
+export function buildQrisHTML(qrisDataUrl, printer) {
+  const paperWidth = printer?.paper_width || '80mm';
+  const { width } = getPaperSize(paperWidth);
+  const css = `
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Courier New', monospace; font-size: 14px; width: ${width}; text-align: center; }
+    .qris-container { padding: 4mm; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    img { max-width: 100%; height: auto; }
+    h3 { margin-bottom: 2mm; font-size: 16px; }
+    p { font-size: 12px; margin-top: 2mm; }
+    @media print {
+      @page { margin: 0; size: ${width} auto; }
+      body { width: 100%; }
+    }
+  `;
+  return `
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Print QRIS</title>
+        <style>${css}</style>
+      </head>
+      <body>
+        <div class="qris-container">
+          <h3>SCAN UNTUK BAYAR</h3>
+          <img src="${qrisDataUrl}" alt="QRIS" />
+          <p>QRIS Didukung oleh Seluruh Pembayaran Digital</p>
+        </div>
+      </body>
+    </html>
   `;
 }

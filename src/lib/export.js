@@ -3,7 +3,7 @@
  */
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 
 // ─── EXCEL ────────────────────────────────────────────────────
 
@@ -95,21 +95,18 @@ export function exportPDF(config) {
       y += 8;
     }
 
-    doc.autoTable({
+    autoTable(doc, {
       startY: y,
       head: [table.columns],
       body: table.rows,
-      theme: 'striped',
-      headStyles: {
-        fillColor: [111, 78, 55], // cafe brown
-        textColor: 255,
-        fontStyle: 'bold',
-        fontSize: 9,
-      },
-      bodyStyles: { fontSize: 8 },
-      alternateRowStyles: { fillColor: [255, 248, 231] }, // cafe light
+      theme: 'grid',
+      headStyles: { fillColor: [245, 230, 211], textColor: [40, 40, 40], fontStyle: 'bold' },
+      styles: { fontSize: 8, cellPadding: 3 },
+      columnStyles: table.columnStyles || {},
       margin: { left: 10, right: 10 },
-      didDrawPage: (data) => { y = data.cursor.y + 5; },
+      didDrawPage: (data) => {
+        y = data.cursor.y;
+      },
     });
 
     y = doc.lastAutoTable.finalY + 8;

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useFetch } from '../hooks/useApi';
 import api from '../lib/api';
@@ -181,8 +181,22 @@ function CloseShiftDialog({ shift, open, onClose, onSuccess }) {
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null); // { shift, summary }
+  const [preSummary, setPreSummary] = useState(null);
+  const [loadingPre, setLoadingPre] = useState(false);
 
-  const expectedCash = shift ? parseFloat(shift.live_expected_cash || shift.opening_cash || 0) : 0;
+  useEffect(() => {
+    if (open && shift && !result) {
+      setLoadingPre(true);
+      api.get(`/shifts/${shift.id}/pre-close-summary`)
+        .then(res => setPreSummary(res.data.summary))
+        .catch(console.error)
+        .finally(() => setLoadingPre(false));
+    } else if (!open) {
+      setPreSummary(null);
+    }
+  }, [open, shift, result]);
+
+  const expectedCash = preSummary ? preSummary.expected_cash : (shift ? parseFloat(shift.live_expected_cash || shift.opening_cash || 0) : 0);
   const closingNum   = Number(closingCash) || 0;
   const diff         = closingCash !== '' ? closingNum - expectedCash : null;
 
@@ -269,19 +283,50 @@ function CloseShiftDialog({ shift, open, onClose, onSuccess }) {
         ) : (
           /* ── Close form ── */
           <div className="space-y-4">
+            {/* Warnings */}
+            {!loadingPre && preSummary && (preSummary.unpaid_orders?.length > 0 || preSummary.active_tables?.length > 0) && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-amber-800 text-sm space-y-2">
+                <div className="flex items-start gap-2 font-semibold">
+                  <AlertCircle className="w-4 h-4 mt-0.5 text-amber-600 shrink-0" />
+                  <p>Terdapat transaksi yang belum selesai!</p>
+                </div>
+                {preSummary.unpaid_orders?.length > 0 && (
+                  <p className="text-xs ml-6 font-medium text-amber-700">
+                    &bull; {preSummary.unpaid_orders.length} pesanan belum dibayar (Unpaid)
+                  </p>
+                )}
+                {preSummary.in_progress_orders?.length > 0 && (
+                  <p className="text-xs ml-6 font-medium text-amber-700">
+                    &bull; {preSummary.in_progress_orders.length} pesanan sedang diproses dapur (In-progress)
+                  </p>
+                )}
+                {preSummary.active_tables?.length > 0 && (
+                  <p className="text-xs ml-6 font-medium text-amber-700">
+                    &bull; {preSummary.active_tables.length} meja masih terisi
+                  </p>
+                )}
+              </div>
+            )}
+
             {/* Live preview */}
             <div className="bg-muted/30 rounded-lg p-3 grid grid-cols-3 gap-2 text-center text-xs">
               <div>
                 <p className="text-muted-foreground">Orders</p>
-                <p className="font-bold text-base">{shift?.live_total_orders ?? '—'}</p>
+                <p className="font-bold text-base">
+                  {loadingPre ? <Loader2 className="w-3 h-3 animate-spin mx-auto" /> : (preSummary ? preSummary.total_orders || shift?.live_total_orders : shift?.live_total_orders ?? '—')}
+                </p>
               </div>
               <div>
                 <p className="text-muted-foreground">Revenue</p>
-                <p className="font-bold text-sm">{fmt(shift?.live_total_revenue)}</p>
+                <p className="font-bold text-sm">
+                  {loadingPre ? <Loader2 className="w-3 h-3 animate-spin mx-auto" /> : fmt(preSummary ? preSummary.total_revenue : shift?.live_total_revenue)}
+                </p>
               </div>
               <div>
                 <p className="text-muted-foreground">Kas Diharapkan</p>
-                <p className="font-bold text-sm">{fmt(expectedCash)}</p>
+                <p className="font-bold text-sm">
+                  {loadingPre ? <Loader2 className="w-3 h-3 animate-spin mx-auto" /> : fmt(expectedCash)}
+                </p>
               </div>
             </div>
 
