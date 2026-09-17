@@ -167,6 +167,7 @@ function SummaryCard({ icon: Icon, label, value, color, small, badge }) {
 function EmployeesTab() {
   const toast = useToast();
   const { data, loading, refetch } = useFetch('/hr/employees');
+  const { data: stationsData } = useFetch('/stations');
   const employees = data?.employees || [];
   const [open, setOpen] = useState(false);
   const [editId, setEditId] = useState(null);
@@ -267,7 +268,15 @@ function EmployeesTab() {
               </div>
               <div>
                 <label className="text-xs font-medium text-muted-foreground">Departemen</label>
-                <Input value={form.department} onChange={e => setForm(f=>({...f,department:e.target.value}))} placeholder="Dapur, Bar, Kasir..." className="mt-1" />
+                <Select value={form.department} onValueChange={v => setForm(f=>({...f,department:v}))}>
+                  <SelectTrigger className="mt-1"><SelectValue placeholder="Pilih Departemen (Stasiun)" /></SelectTrigger>
+                  <SelectContent>
+                    {stationsData?.stations?.map(s => (
+                      <SelectItem key={s.id} value={s.station_name}>{s.station_name}</SelectItem>
+                    ))}
+                    <SelectItem value="Lainnya">Lainnya...</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <label className="text-xs font-medium text-muted-foreground">Jabatan</label>
@@ -1538,7 +1547,7 @@ function EmployeeKPITab() {
       setForm(map);
     } catch { toast.error('Gagal memuat data KPI'); }
     finally { setLoading(false); }
-  }, [selectedEmp, month, toast]);
+  }, [selectedEmp, month]); // toast removed from deps
 
   useEffect(() => { loadKPI(); }, [loadKPI]);
 

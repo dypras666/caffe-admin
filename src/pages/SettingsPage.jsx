@@ -9,6 +9,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '.
 import { Badge } from '../components/ui/badge';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/table';
 import { Plus, Save, Loader2, UserCheck, Users, Mail, Phone, ShieldCheck, Activity, Info, Building2, Server, RefreshCw, CheckCircle, XCircle, Clock } from 'lucide-react';
+import jsQR from 'jsqr';
 
 // ─── CONSTANTS ────────────────────────────────────────────────
 const TABS = [
@@ -18,11 +19,21 @@ const TABS = [
   { key: 'queue', label: 'Queue Sync', icon: Server },
 ];
 
-const GROUPS = ['general', 'contact', 'social', 'appearance', 'payment', 'notification', 'booking', 'table', 'pos', 'member', 'other'];
+const GROUPS = ['general', 'contact', 'social', 'appearance', 'payment', 'notification', 'booking', 'table', 'pos', 'member', 'modules', 'other'];
 const GROUP_LABEL = {
-  general: 'Umum', contact: 'Kontak', social: 'Sosial Media', appearance: 'Tampilan',
-  payment: 'Pembayaran', notification: 'Notifikasi', booking: 'Booking',
-  table: 'Pengaturan Meja', pos: 'POS Kasir', member: 'Member', storage: 'Storage & File', other: 'Lainnya',
+  general: 'Umum',
+  contact: 'Kontak & Alamat',
+  social: 'Sosial Media',
+  appearance: 'Tampilan',
+  payment: 'Pembayaran',
+  notification: 'Notifikasi',
+  booking: 'Reservasi',
+  table: 'Meja & QR',
+  pos: 'Kasir & POS',
+  member: 'Membership',
+  modules: 'Modul Tambahan',
+  storage: 'Storage & File',
+  other: 'Lainnya',
 };
 const TYPES = ['text', 'number', 'boolean', 'json', 'password', 'select', 'image', 'color'];
 const EMPTY_NEW = { setting_key: '', setting_value: '', setting_type: 'text', setting_group: 'general', label: '', is_public: false };
@@ -167,7 +178,33 @@ function SettingsTab() {
                   fd.append('file', file);
                   try {
                     const res = await api.post('/media/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-                    onChange(res.data.file?.url || res.data.file?.file_path || res.data.url || res.data.file_path);
+                    const imageUrl = res.data.file?.url || res.data.file?.file_path || res.data.url || res.data.file_path;
+                    onChange(imageUrl);
+                    
+                    // Auto-decode QRIS if this is qris_image
+                    if (setting.setting_key === 'qris_image') {
+                      const reader = new FileReader();
+                      reader.onload = (event) => {
+                        const img = new Image();
+                        img.onload = () => {
+                          const canvas = document.createElement('canvas');
+                          canvas.width = img.width;
+                          canvas.height = img.height;
+                          const ctx = canvas.getContext('2d');
+                          ctx.drawImage(img, 0, 0, img.width, img.height);
+                          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                          const code = jsQR(imageData.data, imageData.width, imageData.height);
+                          if (code && code.data) {
+                            handleChange('qris_string', code.data);
+                            alert('QRIS berhasil di-decode dan disave ke qris_string!');
+                          } else {
+                            alert('Gagal membaca QR Code dari gambar yang diupload. Pastikan gambar jelas.');
+                          }
+                        };
+                        img.src = event.target.result;
+                      };
+                      reader.readAsDataURL(file);
+                    }
                   } catch (err) {
                     alert('Gagal upload gambar');
                   }
