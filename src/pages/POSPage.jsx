@@ -15,7 +15,7 @@ import {
   Search, Plus, Minus, Trash2, ShoppingCart, CreditCard,
   Loader2, ChevronDown, Tag, X, Check, Coffee,
   Utensils, Receipt, Layers, User, UserPlus, Phone, Star, Wallet, QrCode, Clock, Building2, Gift, Sparkles, Ticket, TrendingUp, AlertTriangle,
-  Maximize, Minimize, Store } from 'lucide-react';
+  Maximize, Minimize, Store, AlertCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 const ORDER_TYPES = [
