@@ -10,7 +10,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '.
 import { Badge } from '../components/ui/badge';
 import { Plus, Loader2, UserCheck, UserX, Pencil, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 
-const EMPTY_FORM = { name: '', email: '', password: '', role: 'kasir', phone: '', branch_id: '' };
+const EMPTY_FORM = { name: '', email: '', password: '', role: 'kasir', phone: '', branch_id: '', station_id: '' };
 const ROLE_BADGE = { admin: 'destructive', kasir: 'warning', waiter: 'secondary', member: 'outline' };
 
 export default function UsersPage() {
@@ -39,15 +39,17 @@ export default function UsersPage() {
 
   const { data, loading, refetch } = useFetch(`/users?${qs.toString()}`);
   const { data: branchData } = useFetch('/branches');
+  const { data: stationData } = useFetch('/stations');
 
   const users      = data?.users || [];
   const pagination = data?.pagination || {};
   const branches   = branchData?.branches || [];
+  const stations   = stationData?.stations || [];
 
   const openCreate = () => { setEditUser(null); setForm(EMPTY_FORM); setOpen(true); };
   const openEdit   = (u) => {
     setEditUser(u);
-    setForm({ name: u.name, email: u.email, password: '', role: u.role, phone: u.phone || '', branch_id: u.branch_id ? String(u.branch_id) : '' });
+    setForm({ name: u.name, email: u.email, password: '', role: u.role, phone: u.phone || '', branch_id: u.branch_id ? String(u.branch_id) : '', station_id: u.station_id ? String(u.station_id) : '' });
     setOpen(true);
   };
 
@@ -56,11 +58,11 @@ export default function UsersPage() {
     setSaving(true);
     try {
       if (editUser) {
-        const payload = { name: form.name, role: form.role, phone: form.phone || null, branch_id: form.branch_id ? Number(form.branch_id) : null };
+        const payload = { name: form.name, role: form.role, phone: form.phone || null, branch_id: form.branch_id ? Number(form.branch_id) : null, station_id: form.station_id ? Number(form.station_id) : null };
         if (form.password) payload.password = form.password;
         await api.put(`/users/${editUser.id}`, payload);
       } else {
-        await api.post('/auth/register', { ...form, branch_id: form.branch_id ? Number(form.branch_id) : null });
+        await api.post('/auth/register', { ...form, branch_id: form.branch_id ? Number(form.branch_id) : null, station_id: form.station_id ? Number(form.station_id) : null });
       }
       setOpen(false);
       setForm(EMPTY_FORM);
@@ -279,6 +281,18 @@ export default function UsersPage() {
                   </SelectContent>
                 </Select>
               </div>
+              {form.role === 'station' && (
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Station / Dapur</label>
+                  <Select value={form.station_id || '_none'} onValueChange={v => setForm(f => ({ ...f, station_id: v === '_none' ? '' : v }))}>
+                    <SelectTrigger><SelectValue placeholder="Tidak ditentukan" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_none">— Tidak ditentukan</SelectItem>
+                      {stations.map(s => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
             <div className="flex gap-2 justify-end pt-1">
               <Button type="button" variant="outline" onClick={() => { setOpen(false); setEditUser(null); }}>Batal</Button>

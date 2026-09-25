@@ -172,12 +172,12 @@ function EmployeesTab() {
   const [open, setOpen] = useState(false);
   const [editId, setEditId] = useState(null);
   const [saving, setSaving] = useState(false);
-  const EMPTY_FORM = { full_name: '', employee_code: '', nik: '', phone: '', address: '', department: '', position: '', employment_type: 'full-time', join_date: '', base_salary: '', hourly_rate: '', bank_name: '', bank_account: '', bank_account_name: '', status: 'active', create_user_account: false, email: '', password: '', user_role: 'kasir' };
+  const EMPTY_FORM = { full_name: '', employee_code: '', nik: '', phone: '', address: '', department: '', position: '', employment_type: 'full-time', join_date: '', base_salary: '', hourly_rate: '', bank_name: '', bank_account: '', bank_account_name: '', status: 'active', create_user_account: false, email: '', password: '', user_role: 'kasir', station_id: '' };
   const [form, setForm] = useState(EMPTY_FORM);
 
   const openCreate = () => { setForm(EMPTY_FORM); setEditId(null); setOpen(true); };
   const openEdit = (e) => {
-    setForm({ full_name: e.full_name, employee_code: e.employee_code, nik: e.nik || '', phone: e.phone || '', address: e.address || '', department: e.department || '', position: e.position || '', employment_type: e.employment_type || 'full-time', join_date: e.join_date?.slice(0,10) || '', base_salary: e.base_salary || '', hourly_rate: e.hourly_rate || '', bank_name: e.bank_name || '', bank_account: e.bank_account || '', bank_account_name: e.bank_account_name || '', status: e.status, create_user_account: false, email: '', password: '', user_role: 'kasir' });
+    setForm({ full_name: e.full_name, employee_code: e.employee_code, nik: e.nik || '', phone: e.phone || '', address: e.address || '', department: e.department || '', position: e.position || '', employment_type: e.employment_type || 'full-time', join_date: e.join_date?.slice(0,10) || '', base_salary: e.base_salary || '', hourly_rate: e.hourly_rate || '', bank_name: e.bank_name || '', bank_account: e.bank_account || '', bank_account_name: e.bank_account_name || '', status: e.status, create_user_account: false, email: '', password: '', user_role: 'kasir', station_id: '' });
     setEditId(e.id); setOpen(true);
   };
 
@@ -372,6 +372,18 @@ function EmployeesTab() {
                           </SelectContent>
                         </Select>
                       </div>
+                      {form.user_role === 'station' && (
+                        <div>
+                          <label className="text-xs text-muted-foreground">Station / Dapur</label>
+                          <Select value={form.station_id || '_none'} onValueChange={v => setForm(f=>({...f,station_id:v === '_none' ? '' : v}))}>
+                            <SelectTrigger className="mt-1"><SelectValue placeholder="Tidak ditentukan" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="_none">— Tidak ditentukan</SelectItem>
+                              {stationsData?.stations?.map(s => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
