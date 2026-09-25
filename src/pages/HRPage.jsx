@@ -367,6 +367,7 @@ function EmployeesTab() {
                           <SelectContent>
                             <SelectItem value="kasir">Kasir</SelectItem>
                             <SelectItem value="waiter">Waiter</SelectItem>
+                            <SelectItem value="station">Station / Dapur</SelectItem>
                             <SelectItem value="admin">Admin</SelectItem>
                           </SelectContent>
                         </Select>
