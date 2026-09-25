@@ -21,6 +21,9 @@ function StatCard({ icon: Icon, label, value, sub, color = 'bg-primary' }) {
   );
 }
 
+import { useAuth } from '../context/AuthContext';
+import StationDashboard from './StationDashboard';
+
 const STATUS_LABEL = {
   pending: { label: 'Pending', cls: 'badge-status-pending' },
   preparing: { label: 'Diproses', cls: 'badge-status-preparing' },
@@ -30,7 +33,12 @@ const STATUS_LABEL = {
 };
 
 export default function DashboardPage() {
+  const { user } = useAuth();
   const { data, loading } = useFetch('/dashboard/stats');
+
+  if (user?.role === 'station' || user?.role === 'kitchen') {
+    return <StationDashboard />;
+  }
 
   if (loading) {
     return (
