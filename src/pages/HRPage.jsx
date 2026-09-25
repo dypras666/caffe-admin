@@ -272,7 +272,7 @@ function EmployeesTab() {
                   <SelectTrigger className="mt-1"><SelectValue placeholder="Pilih Departemen (Stasiun)" /></SelectTrigger>
                   <SelectContent>
                     {stationsData?.stations?.map(s => (
-                      <SelectItem key={s.id} value={s.station_name}>{s.station_name}</SelectItem>
+                      <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>
                     ))}
                     <SelectItem value="Lainnya">Lainnya...</SelectItem>
                   </SelectContent>
