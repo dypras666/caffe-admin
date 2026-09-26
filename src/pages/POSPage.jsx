@@ -781,8 +781,8 @@ export default function POSPage() {
         qrisString={settings.qris_string}
         fmt={fmt} onConfirm={placeOrder} placing={placing}
         appliedVoucher={appliedVoucher}
-        onApplied={onVoucherApplied}
-        onRemove={onVoucherRemove}
+        onApplied={v => setAppliedVoucher(v)}
+        onRemove={() => setAppliedVoucher(null)}
       />
 
       {/* ── Shift open modal ──── */}

@@ -166,18 +166,21 @@ function SummaryCard({ icon: Icon, label, value, color, small, badge }) {
 // ─── Employees Tab ────────────────────────────────────────────
 function EmployeesTab() {
   const toast = useToast();
-  const { data, loading, refetch } = useFetch('/hr/employees');
+  const [branchFilter, setBranchFilter] = useState('all');
+  const { data, loading, refetch } = useFetch(`/hr/employees${branchFilter && branchFilter !== 'all' ? `?branch_id=${branchFilter}` : ''}`);
   const { data: stationsData } = useFetch('/stations');
+  const { data: branchesData } = useFetch('/branches');
+  const branches = branchesData?.branches || [];
   const employees = data?.employees || [];
   const [open, setOpen] = useState(false);
   const [editId, setEditId] = useState(null);
   const [saving, setSaving] = useState(false);
-  const EMPTY_FORM = { full_name: '', employee_code: '', nik: '', phone: '', address: '', department: '', position: '', employment_type: 'full-time', join_date: '', base_salary: '', hourly_rate: '', bank_name: '', bank_account: '', bank_account_name: '', status: 'active', create_user_account: false, email: '', password: '', user_role: 'kasir', station_id: '' };
+  const EMPTY_FORM = { full_name: '', employee_code: '', nik: '', phone: '', address: '', department: '', position: '', employment_type: 'full-time', join_date: '', base_salary: '', hourly_rate: '', bank_name: '', bank_account: '', bank_account_name: '', status: 'active', create_user_account: false, email: '', password: '', user_role: 'kasir', station_id: '', branch_id: '' };
   const [form, setForm] = useState(EMPTY_FORM);
 
   const openCreate = () => { setForm(EMPTY_FORM); setEditId(null); setOpen(true); };
   const openEdit = (e) => {
-    setForm({ full_name: e.full_name, employee_code: e.employee_code, nik: e.nik || '', phone: e.phone || '', address: e.address || '', department: e.department || '', position: e.position || '', employment_type: e.employment_type || 'full-time', join_date: e.join_date?.slice(0,10) || '', base_salary: e.base_salary || '', hourly_rate: e.hourly_rate || '', bank_name: e.bank_name || '', bank_account: e.bank_account || '', bank_account_name: e.bank_account_name || '', status: e.status, create_user_account: false, email: '', password: '', user_role: 'kasir', station_id: '' });
+    setForm({ full_name: e.full_name, employee_code: e.employee_code, nik: e.nik || '', phone: e.phone || '', address: e.address || '', department: e.department || '', position: e.position || '', employment_type: e.employment_type || 'full-time', join_date: e.join_date?.slice(0,10) || '', base_salary: e.base_salary || '', hourly_rate: e.hourly_rate || '', bank_name: e.bank_name || '', bank_account: e.bank_account || '', bank_account_name: e.bank_account_name || '', status: e.status, create_user_account: false, email: '', password: '', user_role: 'kasir', station_id: '', branch_id: e.branch_id || '' });
     setEditId(e.id); setOpen(true);
   };
 
@@ -202,8 +205,21 @@ function EmployeesTab() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">{employees.length} karyawan terdaftar</p>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-3">
+          <p className="text-sm text-muted-foreground">{employees.length} karyawan terdaftar</p>
+          <Select value={branchFilter} onValueChange={setBranchFilter}>
+            <SelectTrigger className="h-8 text-xs w-44">
+              <SelectValue placeholder="Semua Cabang" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Semua Cabang</SelectItem>
+              {branches.map(b => (
+                <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <Button size="sm" onClick={openCreate} className="gap-1.5"><Plus className="w-4 h-4" /> Tambah Karyawan</Button>
       </div>
 
@@ -222,6 +238,7 @@ function EmployeesTab() {
               </div>
               <p className="font-semibold text-sm leading-tight">{emp.full_name}</p>
               <p className="text-xs text-muted-foreground font-mono">{emp.employee_code}</p>
+              {emp.branch_name && <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1"><Building2 className="w-3 h-3" /> {emp.branch_name}</p>}
               {emp.position && <p className="text-xs text-muted-foreground mt-1">{emp.position}{emp.department ? ` · ${emp.department}` : ''}</p>}
               {emp.user_email ? (
                 <p className="text-[10px] text-emerald-600 mt-1">✓ Punya akun · {emp.user_role}</p>
@@ -261,6 +278,18 @@ function EmployeesTab() {
               <div>
                 <label className="text-xs font-medium text-muted-foreground">No. Telepon</label>
                 <Input value={form.phone} onChange={e => setForm(f=>({...f,phone:e.target.value}))} className="mt-1" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Cabang</label>
+                <Select value={form.branch_id ? String(form.branch_id) : '_none'} onValueChange={v => setForm(f=>({...f,branch_id:v === '_none' ? '' : v}))}>
+                  <SelectTrigger className="mt-1"><SelectValue placeholder="Pilih Cabang" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">— Tidak ditentukan</SelectItem>
+                    {branches.map(b => (
+                      <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <label className="text-xs font-medium text-muted-foreground">Tanggal Masuk</label>

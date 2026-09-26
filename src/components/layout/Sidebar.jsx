@@ -42,9 +42,9 @@ function buildNavGroups(settings = {}) {
     icon: Package,
     color: 'text-violet-600',
     items: [
-      { to: '/products',    icon: Package,    label: 'Produk',         adminOnly: true },
-      { to: '/variants',    icon: Layers,     label: 'Varian & Addon', adminOnly: true },
-      { to: '/categories',  icon: Tag,        label: 'Kategori',       adminOnly: true },
+      { to: '/products',    icon: Package,    label: 'Produk',         roles: ['admin', 'station'] },
+      { to: '/variants',    icon: Layers,     label: 'Varian & Addon', roles: ['admin', 'station'] },
+      { to: '/categories',  icon: Tag,        label: 'Kategori',       roles: ['admin', 'station'] },
     ],
   },
   ...(bookingEnabled ? [{
@@ -64,10 +64,10 @@ function buildNavGroups(settings = {}) {
     icon: Warehouse,
     color: 'text-emerald-600',
     items: [
-      { to: '/stock',       icon: Warehouse,    label: 'Stok',        adminOnly: true },
-      { to: '/units',       icon: Scale,        label: 'Satuan',      adminOnly: true },
-      { to: '/ingredients', icon: FlaskConical, label: 'Bahan Baku',  adminOnly: true },
-      { to: '/recipes',     icon: BookMarked,   label: 'Resep & HPP', adminOnly: true },
+      { to: '/stock',       icon: Warehouse,    label: 'Stok',        roles: ['admin', 'station'] },
+      { to: '/units',       icon: Scale,        label: 'Satuan',      roles: ['admin', 'station'] },
+      { to: '/ingredients', icon: FlaskConical, label: 'Bahan Baku',  roles: ['admin', 'station'] },
+      { to: '/recipes',     icon: BookMarked,   label: 'Resep & HPP', roles: ['admin', 'station'] },
     ],
   }] : []),
   {

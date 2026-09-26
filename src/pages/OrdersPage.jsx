@@ -14,7 +14,8 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '.
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { Input } from '../components/ui/input';
 import { ServerSelect } from '../components/ui/server-select';
-import { Loader2, RefreshCw, ChevronLeft, ChevronRight, ShoppingBag, TrendingUp, Clock, XCircle, Printer, X, Plus, Minus, Trash2, AlertCircle, Scissors, FileSpreadsheet, FileText, Wallet } from 'lucide-react';
+import { Loader2, RefreshCw, ChevronLeft, ChevronRight, ShoppingBag, TrendingUp, Clock, XCircle, Printer, X, Plus, Minus, Trash2, AlertCircle, Scissors, FileSpreadsheet, FileText, Wallet, Volume2 } from 'lucide-react';
+import { useToast } from '../components/ui/toast';
 import { exportOrdersPDF, exportOrdersExcel } from '../lib/export';
 
 export const STATUS_OPTIONS = ['all', 'pending', 'preparing', 'ready', 'completed', 'cancelled'];
@@ -154,7 +155,7 @@ function CancelRequestsPanel({ onClose, onUpdated }) {
       onUpdated();
       load();
     } catch (err) {
-      alert(err.response?.data?.error || 'Gagal');
+      toast.error(err.response?.data?.error || 'Gagal');
     } finally { setActionId(null); }
   };
 
@@ -263,7 +264,7 @@ export function OrderDetailPanel({ orderId, onClose, onStatusUpdated, autoOpenPa
       await loadDetail();
       onStatusUpdated();
     } catch (err) {
-      alert(err.response?.data?.error || 'Gagal update status');
+      toast.error(err.response?.data?.error || 'Gagal update status');
     } finally {
       setUpdatingId(null);
     }
@@ -277,7 +278,7 @@ export function OrderDetailPanel({ orderId, onClose, onStatusUpdated, autoOpenPa
       await loadDetail();
       onStatusUpdated();
     } catch (err) {
-      alert(err.response?.data?.error || 'Gagal proses pembayaran');
+      toast.error(err.response?.data?.error || 'Gagal proses pembayaran');
     } finally {
       setUpdatingId(null);
     }
@@ -293,7 +294,7 @@ export function OrderDetailPanel({ orderId, onClose, onStatusUpdated, autoOpenPa
         await loadDetail();
         onStatusUpdated();
       } catch (err) {
-        alert(err.response?.data?.error || 'Gagal membatalkan');
+        toast.error(err.response?.data?.error || 'Gagal membatalkan');
       } finally { setUpdatingId(null); }
     } else {
       // preparing / ready → open dialog
@@ -309,7 +310,7 @@ export function OrderDetailPanel({ orderId, onClose, onStatusUpdated, autoOpenPa
       setCancelDialogOpen(false);
       setCancelRequestSent(true);
     } catch (err) {
-      alert(err.response?.data?.error || 'Gagal mengirim permintaan');
+      toast.error(err.response?.data?.error || 'Gagal mengirim permintaan');
     } finally { setUpdatingId(null); }
   };
 
@@ -372,7 +373,7 @@ export function OrderDetailPanel({ orderId, onClose, onStatusUpdated, autoOpenPa
       onStatusUpdated();
       setEditMode(false);
     } catch (err) {
-      alert(err.response?.data?.error || 'Gagal menyimpan');
+      toast.error(err.response?.data?.error || 'Gagal menyimpan');
     } finally { setSavingEdit(false); }
   };
 
@@ -390,7 +391,7 @@ export function OrderDetailPanel({ orderId, onClose, onStatusUpdated, autoOpenPa
       setSelectedProduct(null);
       setAddQty(1);
     } catch (err) {
-      alert(err.response?.data?.error || 'Gagal menambah item');
+      toast.error(err.response?.data?.error || 'Gagal menambah item');
     } finally { setUpdatingId(null); }
   };
 
@@ -835,6 +836,8 @@ export function OrderDetailPanel({ orderId, onClose, onStatusUpdated, autoOpenPa
 }
 
 export default function OrdersPage() {
+  const toast = useToast();
+
   const { user } = useAuth();
   const { can } = usePermissions();
   const { shiftRequired } = useShiftGuard();
@@ -898,7 +901,7 @@ export default function OrdersPage() {
       await api.put(`/orders/${orderId}/status`, { status: newStatus });
       refetch();
     } catch (err) {
-      alert(err.response?.data?.error || 'Gagal update status');
+      toast.error(err.response?.data?.error || 'Gagal update status');
     } finally {
       setUpdatingId(null);
     }
@@ -911,10 +914,22 @@ export default function OrdersPage() {
       await api.put(`/orders/${orderId}/status`, { status: 'cancelled' });
       refetch();
     } catch (err) {
-      alert(err.response?.data?.error || 'Gagal membatalkan');
+      toast.error(err.response?.data?.error || 'Gagal membatalkan');
     } finally {
       setUpdatingId(null);
     }
+  };
+
+  const callCustomer = (order) => {
+    if (!('speechSynthesis' in window)) {
+      return toast.error('Browser Anda tidak mendukung fitur pemanggilan suara (Text-to-Speech).');
+    }
+    const name = order.customer_name || 'Pelanggan';
+    const text = `Pesanan atas nama ${name}, silakan menuju ke kasir atau tempat pengambilan.`;
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'id-ID';
+    utterance.rate = 0.9; // sedikit diperlambat agar lebih jelas
+    window.speechSynthesis.speak(utterance);
   };
 
   if (shiftRequired) {
@@ -1179,6 +1194,17 @@ export default function OrdersPage() {
                             Batal
                           </Button>
                         )}
+                        {order.order_status === 'ready' && (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={(e) => { e.stopPropagation(); callCustomer(order); }}
+                            className="text-xs h-7 px-2 bg-blue-100 hover:bg-blue-200 text-blue-800"
+                            title="Panggil Pelanggan"
+                          >
+                            <Volume2 className="w-3.5 h-3.5 mr-1" /> Panggil
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -1254,7 +1280,7 @@ function OrderVariantPicker({ product, onClose, onConfirm }) {
 
   const handleConfirm = () => {
     for (const g of variantGroups) {
-      if (g.is_required && !selVariants[g.id]) { alert(`Pilih ${g.name} terlebih dulu`); return; }
+      if (g.is_required && !selVariants[g.id]) { toast.error(`Pilih ${g.name} terlebih dulu`); return; }
     }
     const variants = Object.entries(selVariants).filter(([, o]) => o).map(([gid, opt]) => ({
       group_id: parseInt(gid), option_id: opt.id, option_name: opt.name, price_modifier: opt.price_modifier,

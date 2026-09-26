@@ -58,6 +58,15 @@ function RequireAdmin({ children }) {
   return children;
 }
 
+function RequireRole({ children, roles }) {
+  const { user, loading } = useAuth();
+  if (loading) return null; // wait for auth check
+  if (!user) return <Navigate to="/login" replace />;
+  if (user.role === 'admin') return children;
+  if (!roles.includes(user.role)) return <Navigate to="/" replace />;
+  return children;
+}
+
 function AppRoutes() {
   const { user } = useAuth();
 
@@ -67,25 +76,25 @@ function AppRoutes() {
       <Route path="/" element={<RequireAuth><SidebarProvider><AppLayout /></SidebarProvider></RequireAuth>}>
         <Route index element={<DashboardPage />} />
         <Route path="orders" element={<OrdersPage />} />
-        <Route path="products" element={<RequireAdmin><ProductsPage /></RequireAdmin>} />
-        <Route path="categories" element={<RequireAdmin><CategoriesPage /></RequireAdmin>} />
+        <Route path="products" element={<RequireRole roles={['station']}><ProductsPage /></RequireRole>} />
+        <Route path="categories" element={<RequireRole roles={['station']}><CategoriesPage /></RequireRole>} />
         <Route path="bookings" element={<RequireAdmin><BookingsPage /></RequireAdmin>} />
         <Route path="media" element={<RequireAdmin><MediaPage /></RequireAdmin>} />
         <Route path="rooms" element={<RequireAdmin><RoomsPage /></RequireAdmin>} />
         <Route path="tables" element={<RequireAdmin><TablesPage /></RequireAdmin>} />
         <Route path="payments" element={<RequireAdmin><PaymentsPage /></RequireAdmin>} />
-        <Route path="stock" element={<RequireAdmin><StockPage /></RequireAdmin>} />
+        <Route path="stock" element={<RequireRole roles={['station']}><StockPage /></RequireRole>} />
         <Route path="audit" element={<RequireAdmin><AuditPage /></RequireAdmin>} />
         <Route path="pos" element={<POSPage />} />
         <Route path="table-order" element={<TableOrderPage />} />
         <Route path="printers" element={<RequireAdmin><PrintersPage /></RequireAdmin>} />
-        <Route path="variants" element={<RequireAdmin><VariantsPage /></RequireAdmin>} />
-        <Route path="ingredients" element={<RequireAdmin><IngredientsPage /></RequireAdmin>} />
-        <Route path="recipes" element={<RequireAdmin><RecipesPage /></RequireAdmin>} />
+        <Route path="variants" element={<RequireRole roles={['station']}><VariantsPage /></RequireRole>} />
+        <Route path="ingredients" element={<RequireRole roles={['station']}><IngredientsPage /></RequireRole>} />
+        <Route path="recipes" element={<RequireRole roles={['station']}><RecipesPage /></RequireRole>} />
         <Route path="expenses" element={<RequireAdmin><ExpensesPage /></RequireAdmin>} />
         <Route path="branches" element={<RequireAdmin><BranchesPage /></RequireAdmin>} />
         <Route path="stations" element={<RequireAdmin><StationsPage /></RequireAdmin>} />
-        <Route path="units" element={<RequireAdmin><UnitsPage /></RequireAdmin>} />
+        <Route path="units" element={<RequireRole roles={['station']}><UnitsPage /></RequireRole>} />
         <Route path="waiter" element={<WaiterPage />} />
         <Route path="members" element={<RequireAdmin><MembersPage /></RequireAdmin>} />
         <Route path="users" element={<RequireAdmin><UsersPage /></RequireAdmin>} />
