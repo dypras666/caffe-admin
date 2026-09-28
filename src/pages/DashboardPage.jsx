@@ -23,6 +23,8 @@ function StatCard({ icon: Icon, label, value, sub, color = 'bg-primary' }) {
 
 import { useAuth } from '../context/AuthContext';
 import StationDashboard from './StationDashboard';
+import { useState, useEffect } from 'react';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../components/ui/select';
 
 const STATUS_LABEL = {
   pending: { label: 'Pending', cls: 'badge-status-pending' },
@@ -32,20 +34,42 @@ const STATUS_LABEL = {
   cancelled: { label: 'Dibatalkan', cls: 'badge-status-cancelled' },
 };
 
+function BranchFilter({ branchId, onBranch }) {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
+  const { data: branchData } = useFetch(isAdmin ? '/branches' : null);
+  const branches = branchData?.branches || [];
+
+  useEffect(() => {
+    if (!isAdmin && user?.branch_id) {
+      onBranch(String(user.branch_id));
+    }
+  }, [isAdmin, user?.branch_id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!isAdmin) return null;
+
+  return (
+    <Select value={branchId} onValueChange={onBranch}>
+      <SelectTrigger className="w-36 h-8 text-xs"><SelectValue placeholder="Semua Cabang" /></SelectTrigger>
+      <SelectContent>
+        <SelectItem value="all">Semua Cabang</SelectItem>
+        {branches.map((b) => <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>)}
+      </SelectContent>
+    </Select>
+  );
+}
+
 export default function DashboardPage() {
   const { user } = useAuth();
-  const { data, loading } = useFetch('/dashboard/stats');
+  const [branchId, setBranchId] = useState('all');
+
+  const qs = new URLSearchParams();
+  if (branchId !== 'all') qs.set('branch_id', branchId);
+
+  const { data, loading, refetch } = useFetch(`/dashboard/stats?${qs}`);
 
   if (user?.role === 'station' || user?.role === 'kitchen') {
     return <StationDashboard />;
-  }
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-      </div>
-    );
   }
 
   const stats = data || {};
@@ -54,16 +78,31 @@ export default function DashboardPage() {
   const bookings_pending = stats.total_bookings_pending ?? 0;
   const total_users = stats.total_users ?? 0; // backend doesn't return this currently
   const recentOrders = stats.recent_orders || [];
-  const salesData = stats.revenue_last_7_days || [];
+  const salesData = (stats.revenue_last_7_days || []).map(d => {
+    const rawDate = d.date;
+    const dateObj = new Date(rawDate);
+    const formatted = isNaN(dateObj) ? rawDate : dateObj.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
+    return { ...d, date: formatted };
+  });
   const topProducts = stats.top_products || [];
 
   return (
     <div className="space-y-6">
-      {/* Stat cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="flex flex-nowrap overflow-x-auto hide-scrollbar items-center gap-2 pb-1">
+        <BranchFilter branchId={branchId} onBranch={setBranchId} />
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+        </div>
+      ) : (
+        <>
+          {/* Stat cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard icon={ShoppingBag} label="Total Pesanan Hari Ini" value={orders_today} sub="Semua status" color="bg-primary" />
         <StatCard icon={TrendingUp} label="Revenue Hari Ini" value={revenue_today ? `Rp ${Number(revenue_today).toLocaleString('id')}` : 'Rp 0'} sub="Pesanan selesai" color="bg-emerald-600" />
-        <StatCard icon={ClipboardList} label="Booking Aktif" value={bookings_pending} sub="Belum dikonfirmasi" color="bg-amber-500" />
+        <StatCard icon={ClipboardList} label="PO & Booking Aktif" value={bookings_pending} sub="Pending / Belum dikonfirmasi" color="bg-amber-500" />
         <StatCard icon={Users} label="Total Member" value={total_users} sub="Admin + Kasir + Member" color="bg-violet-600" />
       </div>
 
@@ -151,6 +190,8 @@ export default function DashboardPage() {
           )}
         </CardContent>
       </Card>
+        </>
+      )}
     </div>
   );
 }

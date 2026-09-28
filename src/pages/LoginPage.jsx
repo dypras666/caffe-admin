@@ -6,9 +6,16 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 
 export default function LoginPage() {
-  const [form, setForm] = useState({ email: '', password: '' });
+  const [form, setForm] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return {
+      email: params.get('email') || '',
+      password: params.get('password') || '',
+    };
+  });
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState('');
+  const [isDemo, setIsDemo] = useState(false);
   const { user, login, loading } = useAuth();
   const navigate = useNavigate();
 
@@ -16,6 +23,31 @@ export default function LoginPage() {
   useEffect(() => {
     if (user) navigate('/', { replace: true });
   }, [user, navigate]);
+
+  // Sync if URL search params change
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const emailParam = params.get('email');
+    const pwParam = params.get('password');
+    if (emailParam || pwParam) {
+      setForm(f => ({
+        email: emailParam || f.email,
+        password: pwParam || f.password,
+      }));
+    }
+  }, []);
+
+  // Check if current tenant is demo mode
+  useEffect(() => {
+    fetch('/api/settings/is_demo_tenant')
+      .then(r => r.json())
+      .then(d => {
+        if (d?.setting?.setting_value === 'true') {
+          setIsDemo(true);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -119,6 +151,45 @@ export default function LoginPage() {
               {loading ? 'Masuk...' : 'Masuk'}
             </Button>
           </form>
+
+          {isDemo && (
+            <div className="mt-4 pt-3 border-t border-white/20">
+              <p className="text-[11px] text-white/80 mb-2 font-medium flex items-center gap-1.5">
+                <span className="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                Mode Demo Aktif &mdash; Klik untuk isi akun:
+              </p>
+              <div className="grid grid-cols-3 gap-1.5 text-xs">
+                {(() => {
+                  const slug = window.location.hostname.replace('office-', '').split('.')[0] || 'demo-cafe-baru';
+                  return (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setForm({ email: `owner@${slug}.id`, password: 'demo1234' })}
+                        className="px-2 py-1.5 bg-white/15 hover:bg-white/25 text-white font-medium rounded text-center transition-colors border border-white/20 active:scale-95"
+                      >
+                        Owner
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setForm({ email: `kasir@${slug}.id`, password: 'demo1234' })}
+                        className="px-2 py-1.5 bg-white/15 hover:bg-white/25 text-white font-medium rounded text-center transition-colors border border-white/20 active:scale-95"
+                      >
+                        Kasir
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setForm({ email: `waiter@${slug}.id`, password: 'demo1234' })}
+                        className="px-2 py-1.5 bg-white/15 hover:bg-white/25 text-white font-medium rounded text-center transition-colors border border-white/20 active:scale-95"
+                      >
+                        Waiter
+                      </button>
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
+          )}
 
           <p className="text-center text-white/40 text-xs mt-5">
             Café Azzura &copy; 2026 &mdash; Admin &amp; Kasir Only

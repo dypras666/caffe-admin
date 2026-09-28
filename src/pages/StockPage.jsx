@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, createContext, useContext } from 'react';
 import { useFetch, useDebounce } from '../hooks/useApi';
 import { useAuth } from '../context/AuthContext';
 import api from '../lib/api';
@@ -13,22 +13,16 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '.
 import {
   Package, TrendingDown, AlertTriangle, Warehouse, Plus,
   Loader2, RefreshCw, ArrowUpCircle, ArrowDownCircle,
-  ClipboardList, Truck, BarChart3, Eye, CheckCircle2, Building2
+  ClipboardList, Truck, BarChart3, Eye, CheckCircle2, Building2, Store
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { ServerSelect } from '../components/ui/server-select';
 
-// ─── Branch scope hook + selector ────────────────────────────
-// Admin: shows a select to pick branch (default 'all')
-// Non-admin: locked to own branch_id, no UI shown
+// ─── Branch scope context ────────────────────────────
+const BranchScopeContext = createContext(null);
+
 function useBranchScope() {
-  const { user } = useAuth();
-  const isAdmin = user?.role === 'admin';
-  const [branchId, setBranchId] = useState(isAdmin ? 'all' : String(user?.branch_id || ''));
-  useEffect(() => {
-    if (!isAdmin && user?.branch_id) setBranchId(String(user.branch_id));
-  }, [isAdmin, user?.branch_id]); // eslint-disable-line react-hooks/exhaustive-deps
-  return { branchId, setBranchId, isAdmin };
+  return useContext(BranchScopeContext);
 }
 
 function BranchSelect({ branchId, onChange }) {
@@ -37,10 +31,9 @@ function BranchSelect({ branchId, onChange }) {
   return (
     <div className="flex items-center gap-1.5">
       <Building2 className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-      <Select value={branchId} onValueChange={onChange}>
-        <SelectTrigger className="w-40 h-8 text-xs"><SelectValue placeholder="Semua Cabang" /></SelectTrigger>
+      <Select value={branchId || ''} onValueChange={onChange}>
+        <SelectTrigger className="w-40 h-8 text-xs"><SelectValue placeholder="Pilih Cabang" /></SelectTrigger>
         <SelectContent>
-          <SelectItem value="all">Semua Cabang</SelectItem>
           {branches.map(b => <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>)}
         </SelectContent>
       </Select>
@@ -62,17 +55,49 @@ const MOVE_TYPE = {
 };
 
 export default function StockPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
   const [activeTab, setActiveTab] = useState('summary');
-  // Track which tabs have been visited — only render on first visit
   const [visited, setVisited] = useState(new Set(['summary']));
+  const [branchId, setBranchId] = useState(isAdmin ? '' : String(user?.branch_id || ''));
+  const { data: branchesData } = useFetch('/branches');
+
+  useEffect(() => {
+    if (!isAdmin && user?.branch_id) setBranchId(String(user.branch_id));
+  }, [isAdmin, user?.branch_id]);
 
   const handleTabChange = (val) => {
     setActiveTab(val);
     setVisited(prev => new Set([...prev, val]));
   };
 
+  const branchScopeValue = { branchId, setBranchId, isAdmin };
+
   return (
-    <div className="space-y-5">
+    <BranchScopeContext.Provider value={branchScopeValue}>
+      <div className="space-y-5 relative">
+        {/* Admin Branch Selection Enforcement */}
+        {isAdmin && !branchId && (
+          <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-sm flex flex-col items-center justify-center p-4">
+            <div className="bg-card border rounded-2xl shadow-xl p-8 max-w-sm w-full text-center space-y-6">
+              <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
+                <Store className="w-8 h-8 text-primary" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold mb-2">Pilih Cabang Aktif</h2>
+                <p className="text-sm text-muted-foreground">Sebagai Owner/Admin, Anda wajib memilih sesi cabang sebelum mengelola stok dan inventori.</p>
+              </div>
+              <Select value={branchId || ''} onValueChange={setBranchId}>
+                <SelectTrigger className="h-12"><SelectValue placeholder="Pilih Cabang..." /></SelectTrigger>
+                <SelectContent>
+                  {(branchesData?.branches || []).map(b => (
+                    <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        )}
       <Tabs value={activeTab} onValueChange={handleTabChange}>
         <TabsList className="flex-wrap h-auto gap-1">
           <TabsTrigger value="summary">Ringkasan</TabsTrigger>
@@ -102,6 +127,7 @@ export default function StockPage() {
         </TabsContent>
       </Tabs>
     </div>
+    </BranchScopeContext.Provider>
   );
 }
 

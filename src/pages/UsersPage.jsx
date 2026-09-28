@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useFetch, useDebounce } from '../hooks/useApi';
 import api from '../lib/api';
+import { useToast } from '../components/ui/toast';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -8,12 +9,13 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '.
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../components/ui/select';
 import { Badge } from '../components/ui/badge';
-import { Plus, Loader2, UserCheck, UserX, Pencil, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, Loader2, UserCheck, UserX, Pencil, Search, ChevronLeft, ChevronRight, Lock } from 'lucide-react';
 
 const EMPTY_FORM = { name: '', email: '', password: '', role: 'kasir', phone: '', branch_id: '', station_id: '' };
 const ROLE_BADGE = { admin: 'destructive', kasir: 'warning', waiter: 'secondary', member: 'outline' };
 
 export default function UsersPage() {
+  const toast = useToast();
   const [search, setSearch]         = useState('');
   const [roleFilter, setRoleFilter] = useState('');
   const [branchFilter, setBranchFilter] = useState('');
@@ -40,6 +42,15 @@ export default function UsersPage() {
   const { data, loading, refetch } = useFetch(`/users?${qs.toString()}`);
   const { data: branchData } = useFetch('/branches');
   const { data: stationData } = useFetch('/stations');
+  const { data: demoSetting } = useFetch('/settings/is_demo_tenant');
+  const isDemo = demoSetting?.setting?.setting_value === 'true';
+
+  const isMainAdmin = (u) => Boolean(
+    u && (u.role === 'admin' || (u.email && (
+      u.email.toLowerCase().startsWith('owner@') ||
+      u.email.toLowerCase().startsWith('admin@')
+    )))
+  );
 
   const users      = data?.users || [];
   const pagination = data?.pagination || {};
@@ -59,7 +70,9 @@ export default function UsersPage() {
     try {
       if (editUser) {
         const payload = { name: form.name, role: form.role, phone: form.phone || null, branch_id: form.branch_id ? Number(form.branch_id) : null, station_id: form.station_id ? Number(form.station_id) : null };
-        if (form.password) payload.password = form.password;
+        if (form.password && !(isDemo && isMainAdmin(editUser))) {
+          payload.password = form.password;
+        }
         await api.put(`/users/${editUser.id}`, payload);
       } else {
         await api.post('/auth/register', { ...form, branch_id: form.branch_id ? Number(form.branch_id) : null, station_id: form.station_id ? Number(form.station_id) : null });
@@ -68,21 +81,27 @@ export default function UsersPage() {
       setForm(EMPTY_FORM);
       setEditUser(null);
       refetch();
+      toast.success(editUser ? 'Pengguna berhasil diperbarui' : 'Pengguna berhasil ditambahkan');
       if (!editUser && ['kasir', 'waiter'].includes(form.role)) {
         // Employee record auto-created by backend if HR module is enabled
       }
     } catch (err) {
-      alert(err.response?.data?.error || 'Gagal menyimpan');
+      toast.error(err.response?.data?.message || err.response?.data?.error || 'Gagal menyimpan');
     } finally { setSaving(false); }
   };
 
-  const toggleStatus = async (id, currentStatus) => {
+  const toggleStatus = async (id, currentStatus, targetUser) => {
+    if (isDemo && isMainAdmin(targetUser)) {
+      toast.warning('Akun admin utama dilindungi dan tidak dapat dinonaktifkan pada demo kafe.');
+      return;
+    }
     setUpdatingId(id);
     try {
       await api.put(`/users/${id}`, { status: currentStatus === 'active' ? 'inactive' : 'active' });
+      toast.success('Status pengguna berhasil diubah');
       refetch();
     } catch (err) {
-      alert(err.response?.data?.error || 'Gagal update');
+      toast.error(err.response?.data?.message || err.response?.data?.error || 'Gagal update status');
     } finally { setUpdatingId(null); }
   };
 
@@ -189,8 +208,8 @@ export default function UsersPage() {
                         </Button>
                         <Button
                           variant="ghost" size="icon"
-                          disabled={updatingId === u.id || u.role === 'admin'}
-                          onClick={() => toggleStatus(u.id, u.status)}
+                          disabled={updatingId === u.id || u.role === 'admin' || (isDemo && isMainAdmin(u))}
+                          onClick={() => toggleStatus(u.id, u.status, u)}
                           title={u.status === 'active' ? 'Nonaktifkan' : 'Aktifkan'}
                           className={u.status === 'active' ? 'text-amber-500 hover:bg-amber-50' : 'text-green-600 hover:bg-green-50'}
                         >
@@ -229,6 +248,17 @@ export default function UsersPage() {
           <DialogHeader>
             <DialogTitle>{editUser ? `Edit — ${editUser.name}` : 'Tambah Pengguna Baru'}</DialogTitle>
           </DialogHeader>
+
+          {editUser && isDemo && isMainAdmin(editUser) && (
+            <div className="p-3 bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-400 rounded-md text-xs flex items-start gap-2">
+              <Lock className="w-4 h-4 mt-0.5 shrink-0" />
+              <div>
+                <span className="font-semibold block">Mode Demo Aktif</span>
+                Akun admin utama dikunci demi keamanan. Password dan role tidak dapat diubah pada demo kafe.
+              </div>
+            </div>
+          )}
+
           <form onSubmit={handleSave} className="space-y-4">
             <div>
               <label className="text-xs font-medium text-muted-foreground mb-1 block">Nama *</label>
@@ -250,8 +280,13 @@ export default function UsersPage() {
               <Input type="password" value={form.password}
                 onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
                 required={!editUser} minLength={editUser ? (form.password ? 6 : 0) : 6}
-                placeholder={editUser ? 'Kosongkan jika tidak diubah' : 'Min. 6 karakter'}
+                disabled={Boolean(editUser && isDemo && isMainAdmin(editUser))}
+                placeholder={editUser && isDemo && isMainAdmin(editUser) ? 'Password dikunci (Mode Demo)' : (editUser ? 'Kosongkan jika tidak diubah' : 'Min. 6 karakter')}
+                className={editUser && isDemo && isMainAdmin(editUser) ? 'bg-muted cursor-not-allowed' : ''}
               />
+              {editUser && isDemo && isMainAdmin(editUser) && (
+                <p className="text-[10px] text-amber-600 mt-1">Password admin dilindungi dan tidak dapat diubah di mode demo</p>
+              )}
             </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground mb-1 block">Telepon</label>
@@ -261,8 +296,14 @@ export default function UsersPage() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-medium text-muted-foreground mb-1 block">Role *</label>
-                <Select value={form.role} onValueChange={v => setForm(f => ({ ...f, role: v }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                <Select
+                  value={form.role}
+                  onValueChange={v => setForm(f => ({ ...f, role: v }))}
+                  disabled={Boolean(editUser && isDemo && isMainAdmin(editUser))}
+                >
+                  <SelectTrigger className={editUser && isDemo && isMainAdmin(editUser) ? 'bg-muted cursor-not-allowed' : ''}>
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="kasir">Kasir</SelectItem>
                     <SelectItem value="waiter">Waiter</SelectItem>

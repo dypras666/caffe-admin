@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useFetch, useDebounce } from '../hooks/useApi';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../components/ui/toast';
 import api from '../lib/api';
 import { cn } from '../lib/utils';
 import { Button } from '../components/ui/button';
@@ -11,13 +12,22 @@ import {
   Search, Plus, Minus, Trash2, ShoppingCart,
   Loader2, ChevronDown, X, Check, Coffee,
   Utensils, Layers, User, UserPlus, Phone, Star, Wallet,
-  CheckCircle2, Building2,
+  CheckCircle2, Building2, CalendarDays, Clock, ShoppingBag,
 } from 'lucide-react';
+
+const ORDER_TYPES = [
+  { value: 'dine-in',  label: 'Dine-in (Meja)',    icon: Utensils },
+  { value: 'takeaway', label: 'Takeaway (Bungkus)', icon: ShoppingBag },
+  { value: 'booking',  label: 'Booking / Reservasi', icon: CalendarDays },
+  { value: 'preorder', label: 'Pre-Order (PO)',     icon: Clock },
+];
 
 export default function WaiterPage() {
   const { user: currentUser } = useAuth();
+  const toast = useToast();
   const [cart, setCart] = useState([]);
   const [selectedTable, setSelectedTable] = useState(null);
+  const [orderType, setOrderType] = useState('dine-in');
   const [customerName, setCustomerName] = useState('');
   const [notes, setNotes] = useState('');
   const [search, setSearch] = useState('');
@@ -28,6 +38,16 @@ export default function WaiterPage() {
   const [variantProduct, setVariantProduct] = useState(null);
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
   const [selectedMember, setSelectedMember] = useState(null);
+
+  // Scheduling for booking / PO
+  const [serviceDate, setServiceDate] = useState(new Date().toISOString().split('T')[0]);
+  const [serviceTime, setServiceTime] = useState('14:00');
+  const [servicePersonCount, setServicePersonCount] = useState('2');
+
+  // Payment mode: 'pending' (Bayar Nanti), 'dp' (Bayar DP), 'paid' (Lunas)
+  const [paymentMode, setPaymentMode] = useState('pending');
+  const [dpAmount, setDpAmount] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState('cash');
 
   const debouncedSearch = useDebounce(search, 350);
   const branchQs = currentUser?.branch_id ? `&branch_id=${currentUser.branch_id}` : '';
@@ -70,36 +90,83 @@ export default function WaiterPage() {
     setCart(c => {
       const ex = c.find(i => i.cartKey === key);
       if (ex) return c.map(i => i.cartKey === key ? { ...i, qty: i.qty + 1 } : i);
-      return [...c, { cartKey: key, id: product.id, name, price: parseFloat(product.price), unitPrice, addonsPerUnit: addonsUnit, variants, addons, qty: 1, notes: '' }];
+      return [...c, { cartKey: key, id: product.id, name, price: parseFloat(product.price), unitPrice, addonsPerUnit: addonsUnit, variants, addons, qty: 1, notes: '', product_type: product.product_type }];
     });
   };
 
   const handleProductClick = (product) => {
-    if (!selectedTable) { setTablePickerOpen(true); return; }
-    if (product.has_variants || product.has_addons || product.variant_groups?.length || product.addon_groups?.length) setVariantProduct(product);
-    else addItem(product);
+    const isService = product.product_type === 'service';
+
+    // If clicking a service product, switch automatically to booking or preorder
+    if (isService) {
+      const lower = (product.name || '').toLowerCase();
+      if (product.service_type === 'preorder' || lower.includes('pre-order') || lower.includes('po ') || lower.includes('cake')) {
+        if (orderType !== 'preorder') setOrderType('preorder');
+      } else {
+        if (orderType !== 'booking') setOrderType('booking');
+      }
+    }
+
+    if (product.has_variants || product.has_addons || product.variant_groups?.length || product.addon_groups?.length) {
+      setVariantProduct(product);
+    } else {
+      addItem(product);
+    }
   };
 
   const updateQty  = (key, delta) => setCart(c =>
     c.map(i => i.cartKey === key ? { ...i, qty: Math.max(0, i.qty + delta) } : i).filter(i => i.qty > 0)
   );
-  const clearCart  = () => { setCart([]); setCustomerName(''); setNotes(''); setSelectedMember(null); };
+  const clearCart  = () => {
+    setCart([]);
+    setCustomerName('');
+    setNotes('');
+    setSelectedMember(null);
+    setDpAmount('');
+    setPaymentMode('pending');
+  };
   const onMemberSelect = (member) => { setSelectedMember(member); setCustomerName(member ? member.name : ''); };
 
   const placeOrder = async () => {
-    if (!cart.length || !selectedTable) return;
+    if (!cart.length) {
+      toast.warning('Keranjang masih kosong');
+      return;
+    }
+    // Only require table for Dine-in orders!
+    if (orderType === 'dine-in' && !selectedTable) {
+      toast.warning('Pilih meja terlebih dahulu untuk pesanan Dine-in');
+      setTablePickerOpen(true);
+      return;
+    }
+
+    const dpVal = parseFloat(dpAmount) || 0;
+    const isDp = paymentMode === 'dp' && dpVal > 0;
+    const isPaid = paymentMode === 'paid';
+    const isPending = paymentMode === 'pending';
+
+    if (isDp && dpVal >= total) {
+      toast.warning('Nominal DP tidak boleh melebihi atau sama dengan total pesanan. Pilih "Lunas" untuk pembayaran penuh.');
+      return;
+    }
+
     setPlacing(true);
     try {
       const res = await api.post('/orders', {
-        customer_name:  customerName || 'Umum',
+        customer_name:  customerName || selectedMember?.name || 'Umum',
         customer_email: selectedMember?.email || null,
         customer_phone: selectedMember?.phone || null,
-        order_type:     'dine-in',
-        table_number:   selectedTable.table_number,
-        table_id:       selectedTable.id,
-        payment_method: 'cash',
+        order_type:     orderType,
+        table_number:   selectedTable?.table_number || null,
+        table_id:       selectedTable?.id || null,
+        payment_method: isPending ? 'pending' : paymentMethod,
+        payment_status: isPaid ? 'paid' : (isDp ? 'partial' : 'pending'),
+        dp_amount:      isDp ? dpVal : 0,
         notes:          notes || null,
         discount:       0,
+        service_date:   (orderType === 'booking' || orderType === 'preorder') ? serviceDate : null,
+        service_time:   (orderType === 'booking' || orderType === 'preorder') ? serviceTime : null,
+        service_person_count: orderType === 'booking' ? parseInt(servicePersonCount || '1') : null,
+        service_status: (orderType === 'booking' || orderType === 'preorder') ? 'pending' : null,
         items: cart.map(i => ({
           product_id: i.id, quantity: i.qty, notes: i.notes || null,
           variants: (i.variants || []).map(v => ({ group_id: v.group_id, option_id: v.option_id })),
@@ -110,14 +177,22 @@ export default function WaiterPage() {
       refetchTables();
       clearCart();
       setSelectedTable(null);
+      toast.success(
+        isDp ? `Order berhasil dibuat dengan DP ${fmt(dpVal)}` :
+        isPaid ? 'Order berhasil dibuat dan lunas!' :
+        'Order berhasil dibuat (menunggu pembayaran)'
+      );
       setTimeout(() => setSuccessOrder(null), 4000);
     } catch (err) {
-      alert(err.response?.data?.error || err.response?.data?.errors?.[0]?.msg || 'Gagal membuat order');
+      toast.error(err.response?.data?.error || err.response?.data?.errors?.[0]?.msg || 'Gagal membuat order');
     } finally { setPlacing(false); }
   };
 
   const cartProps = {
-    cart, selectedTable, customerName, setCustomerName, selectedMember, onMemberSelect,
+    cart, orderType, setOrderType, selectedTable, onOpenTablePicker: () => setTablePickerOpen(true),
+    customerName, setCustomerName, selectedMember, onMemberSelect,
+    serviceDate, setServiceDate, serviceTime, setServiceTime, servicePersonCount, setServicePersonCount,
+    paymentMode, setPaymentMode, dpAmount, setDpAmount, paymentMethod, setPaymentMethod,
     notes, setNotes, subtotal, taxAmt, taxRate, total, totalItems, fmt, updateQty,
     onRemove:     (key)       => setCart(c => c.filter(i => i.cartKey !== key)),
     onNoteChange: (key, note) => setCart(c => c.map(i => i.cartKey === key ? { ...i, notes: note } : i)),
@@ -144,43 +219,106 @@ export default function WaiterPage() {
       {/* ── LEFT: Product area ───────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
-        {/* Table selector — prominent banner */}
-        <div className={cn(
-          'px-4 py-3 border-b flex items-center justify-between gap-3 shrink-0',
-          selectedTable ? 'bg-primary/5 border-primary/30' : 'bg-amber-50 border-amber-300'
-        )}>
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className={cn(
-              'w-10 h-10 rounded-xl flex items-center justify-center shrink-0',
-              selectedTable ? 'bg-primary text-primary-foreground' : 'bg-amber-400 text-white'
-            )}>
-              <Utensils className="w-5 h-5" />
-            </div>
-            <div className="min-w-0">
+        {/* Order Type Tabs & Status Banner */}
+        <div className="bg-card border-b px-4 py-2 flex flex-wrap items-center justify-between gap-2 shrink-0">
+          <div className="flex items-center gap-1 bg-muted/60 p-1 rounded-xl border">
+            {ORDER_TYPES.map(t => {
+              const Icon = t.icon;
+              const active = orderType === t.value;
+              return (
+                <button
+                  key={t.value}
+                  type="button"
+                  onClick={() => {
+                    setOrderType(t.value);
+                    if (t.value !== 'dine-in' && t.value !== 'booking') {
+                      setSelectedTable(null);
+                    }
+                  }}
+                  className={cn(
+                    'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all',
+                    active
+                      ? 'bg-primary text-primary-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  )}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  <span>{t.label}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Table Action / Indicator */}
+          {orderType === 'dine-in' ? (
+            <div className="flex items-center gap-2">
               {selectedTable ? (
-                <>
-                  <p className="text-xs text-muted-foreground leading-tight">Meja Terpilih</p>
-                  <p className="font-bold text-base text-primary leading-tight truncate">
+                <div className="flex items-center gap-2 bg-primary/10 border border-primary/30 px-3 py-1.5 rounded-xl">
+                  <Utensils className="w-4 h-4 text-primary" />
+                  <span className="text-xs font-bold text-primary">
                     {selectedTable.name || `Meja ${selectedTable.table_number}`}
-                  </p>
-                </>
+                  </span>
+                  <Button variant="ghost" size="sm" onClick={() => setTablePickerOpen(true)} className="h-6 text-[11px] px-2 text-primary">
+                    Ganti
+                  </Button>
+                </div>
               ) : (
-                <>
-                  <p className="font-bold text-amber-800 text-base leading-tight">Pilih Meja</p>
-                  <p className="text-xs text-amber-600 leading-tight">Wajib pilih meja sebelum memesan</p>
-                </>
+                <Button
+                  onClick={() => setTablePickerOpen(true)}
+                  size="sm"
+                  className="h-8 text-xs bg-amber-500 hover:bg-amber-600 text-white gap-1.5"
+                >
+                  <Utensils className="w-3.5 h-3.5" />
+                  Pilih Meja (Wajib)
+                </Button>
               )}
             </div>
-          </div>
-          <Button
-            onClick={() => setTablePickerOpen(true)}
-            size="sm"
-            variant={selectedTable ? 'outline' : 'default'}
-            className={cn('shrink-0', !selectedTable && 'bg-amber-500 hover:bg-amber-600 text-white border-0')}
-          >
-            {selectedTable ? 'Ganti' : 'Pilih Meja'}
-          </Button>
+          ) : orderType === 'booking' ? (
+            <div className="flex items-center gap-2">
+              {selectedTable ? (
+                <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-xl">
+                  <CalendarDays className="w-3.5 h-3.5 text-blue-600" />
+                  <span className="text-xs font-bold text-blue-700">Meja: {selectedTable.name || selectedTable.table_number}</span>
+                  <button onClick={() => setSelectedTable(null)} className="text-muted-foreground hover:text-destructive text-xs">✕</button>
+                </div>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setTablePickerOpen(true)}
+                  className="h-8 text-xs gap-1.5 text-muted-foreground hover:text-foreground"
+                >
+                  + Meja (Opsional)
+                </Button>
+              )}
+            </div>
+          ) : (
+            <span className="text-xs font-medium text-muted-foreground bg-muted/40 px-3 py-1.5 rounded-lg border">
+              {orderType === 'takeaway' ? '🥡 Pesanan Bungkus (Tanpa Meja)' : '📦 Pre-Order (Tanpa Meja)'}
+            </span>
+          )}
         </div>
+
+        {/* Mode info banner if not dine-in */}
+        {orderType !== 'dine-in' && (
+          <div className={cn(
+            'px-4 py-2 border-b flex items-center justify-between text-xs',
+            orderType === 'booking' ? 'bg-blue-50/70 border-blue-200 text-blue-800' :
+            orderType === 'preorder' ? 'bg-amber-50/70 border-amber-200 text-amber-800' :
+            'bg-slate-50 border-slate-200 text-slate-700'
+          )}>
+            <div className="flex items-center gap-2">
+              {orderType === 'booking' && <CalendarDays className="w-4 h-4 text-blue-600 shrink-0" />}
+              {orderType === 'preorder' && <Clock className="w-4 h-4 text-amber-600 shrink-0" />}
+              {orderType === 'takeaway' && <ShoppingBag className="w-4 h-4 text-slate-600 shrink-0" />}
+              <span>
+                {orderType === 'booking' && 'Mode Booking: Bebas pilih produk tanpa meja. Atur tanggal & opsi DP di keranjang.'}
+                {orderType === 'preorder' && 'Mode Pre-Order: Pesanan di muka tanpa perlu meja. Anda bisa menerima DP (Uang Muka) atau bayar lunas.'}
+                {orderType === 'takeaway' && 'Mode Takeaway: Pesanan dibungkus langsung tanpa meja.'}
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* Search + categories */}
         <div className="bg-card border-b px-4 py-3 space-y-3 shrink-0">
@@ -282,28 +420,120 @@ export default function WaiterPage() {
 }
 
 // ─── Waiter Cart Panel ────────────────────────────────────────
-function WaiterCart({ cart, selectedTable, customerName, setCustomerName, selectedMember, onMemberSelect,
+function WaiterCart({
+  cart, orderType, setOrderType, selectedTable, onOpenTablePicker,
+  customerName, setCustomerName, selectedMember, onMemberSelect,
+  serviceDate, setServiceDate, serviceTime, setServiceTime, servicePersonCount, setServicePersonCount,
+  paymentMode, setPaymentMode, dpAmount, setDpAmount, paymentMethod, setPaymentMethod,
   notes, setNotes, subtotal, taxAmt, taxRate, total, totalItems, fmt, updateQty,
-  onRemove, onNoteChange, onClear, onPlaceOrder, placing }) {
+  onRemove, onNoteChange, onClear, onPlaceOrder, placing
+}) {
   return (
     <>
-      {/* Header: table info + customer */}
+      {/* Header: order type & table info + customer */}
       <div className="px-4 py-3 border-b space-y-2.5 shrink-0">
-        {selectedTable ? (
-          <div className="flex items-center gap-2 px-3 py-2.5 bg-primary/5 border border-primary/30 rounded-xl">
-            <Utensils className="w-4 h-4 text-primary shrink-0" />
-            <span className="text-sm font-bold text-primary flex-1 truncate">
-              {selectedTable.name || `Meja ${selectedTable.table_number}`}
+        {/* Order Type Chips */}
+        <div className="grid grid-cols-4 gap-1 p-1 bg-muted/60 rounded-xl border">
+          {ORDER_TYPES.map(t => {
+            const Icon = t.icon;
+            const active = orderType === t.value;
+            return (
+              <button
+                key={t.value}
+                type="button"
+                onClick={() => setOrderType(t.value)}
+                className={cn(
+                  'flex flex-col items-center justify-center py-1.5 rounded-lg text-[10px] font-semibold transition-all',
+                  active ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                )}
+              >
+                <Icon className="w-3.5 h-3.5 mb-0.5" />
+                <span className="truncate">{t.label.split(' ')[0]}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Table info only if dine-in, or optional table for booking */}
+        {orderType === 'dine-in' ? (
+          selectedTable ? (
+            <div className="flex items-center justify-between px-3 py-2 bg-primary/5 border border-primary/30 rounded-xl">
+              <div className="flex items-center gap-2 min-w-0">
+                <Utensils className="w-4 h-4 text-primary shrink-0" />
+                <span className="text-xs font-bold text-primary truncate">
+                  {selectedTable.name || `Meja ${selectedTable.table_number}`}
+                </span>
+              </div>
+              <Button variant="ghost" size="sm" onClick={onOpenTablePicker} className="h-6 text-[10px] px-2 text-primary">
+                Ganti
+              </Button>
+            </div>
+          ) : (
+            <Button
+              onClick={onOpenTablePicker}
+              size="sm"
+              className="w-full h-8 text-xs bg-amber-500 hover:bg-amber-600 text-white gap-1.5"
+            >
+              <Utensils className="w-3.5 h-3.5" />
+              Pilih Meja (Wajib Dine-in)
+            </Button>
+          )
+        ) : orderType === 'booking' ? (
+          <div className="flex items-center justify-between px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-xl text-xs">
+            <span className="text-blue-800 font-medium">
+              {selectedTable ? `Meja: ${selectedTable.name || selectedTable.table_number}` : 'Meja Opsional'}
             </span>
-            <span className="text-[10px] text-primary/70 bg-primary/10 px-2 py-0.5 rounded-full font-medium">Dine-in</span>
+            <Button variant="ghost" size="sm" onClick={onOpenTablePicker} className="h-6 text-[10px] px-2 text-blue-700">
+              {selectedTable ? 'Ganti' : '+ Meja'}
+            </Button>
           </div>
-        ) : (
-          <div className="px-3 py-2 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700 text-center font-medium">
-            Belum ada meja dipilih
-          </div>
-        )}
+        ) : null}
+
         <CustomerPicker selected={selectedMember} onSelect={onMemberSelect}
           customerName={customerName} setCustomerName={setCustomerName} fmt={fmt} />
+
+        {/* Schedule Inputs for Booking / PO */}
+        {(orderType === 'booking' || orderType === 'preorder') && (
+          <div className="bg-muted/40 p-2.5 rounded-xl border space-y-2 text-xs">
+            <div className="flex items-center gap-1 font-semibold text-primary">
+              <CalendarDays className="w-3.5 h-3.5" />
+              <span>Jadwal {orderType === 'booking' ? 'Reservasi' : 'Pengambilan PO'}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-[10px] text-muted-foreground block mb-0.5">Tanggal</label>
+                <Input
+                  type="date"
+                  value={serviceDate}
+                  onChange={e => setServiceDate(e.target.value)}
+                  className="h-7 text-xs px-2"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-muted-foreground block mb-0.5">Jam</label>
+                <Input
+                  type="time"
+                  value={serviceTime}
+                  onChange={e => setServiceTime(e.target.value)}
+                  className="h-7 text-xs px-2"
+                />
+              </div>
+            </div>
+            {orderType === 'booking' && (
+              <div>
+                <label className="text-[10px] text-muted-foreground block mb-0.5">Jumlah Tamu / Orang</label>
+                <Input
+                  type="number"
+                  min="1"
+                  value={servicePersonCount}
+                  onChange={e => setServicePersonCount(e.target.value)}
+                  className="h-7 text-xs px-2"
+                  placeholder="2"
+                />
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Cart items */}
@@ -326,11 +556,108 @@ function WaiterCart({ cart, selectedTable, customerName, setCustomerName, select
         )}
       </div>
 
-      {/* Summary + actions */}
+      {/* Summary + Payment options + actions */}
       {cart.length > 0 && (
         <div className="border-t px-4 py-3 space-y-3 shrink-0">
           <Input placeholder="Catatan pesanan…" value={notes} onChange={e => setNotes(e.target.value)} className="h-8 text-sm" />
-          <div className="space-y-1 text-sm">
+
+          {/* Payment & DP Selector */}
+          <div className="space-y-2 pt-1 border-t text-xs">
+            <div className="flex justify-between items-center">
+              <span className="font-semibold text-muted-foreground uppercase text-[10px] tracking-wide">Metode Bayar</span>
+              {paymentMode === 'dp' && <Badge variant="outline" className="text-[10px] text-amber-700 bg-amber-50 border-amber-300">Sistem DP</Badge>}
+            </div>
+            <div className="grid grid-cols-3 gap-1 bg-muted/60 p-1 rounded-xl border text-[11px]">
+              <button
+                type="button"
+                onClick={() => setPaymentMode('pending')}
+                className={cn('py-1 rounded-lg font-medium text-center transition-all',
+                  paymentMode === 'pending' ? 'bg-background shadow-sm text-foreground font-bold' : 'text-muted-foreground')}
+              >
+                Bayar Nanti
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setPaymentMode('dp');
+                  if (!dpAmount) setDpAmount(String(Math.round(total * 0.5)));
+                }}
+                className={cn('py-1 rounded-lg font-medium text-center transition-all',
+                  paymentMode === 'dp' ? 'bg-amber-600 text-white font-bold shadow-sm' : 'text-muted-foreground')}
+              >
+                Uang Muka (DP)
+              </button>
+              <button
+                type="button"
+                onClick={() => setPaymentMode('paid')}
+                className={cn('py-1 rounded-lg font-medium text-center transition-all',
+                  paymentMode === 'paid' ? 'bg-green-600 text-white font-bold shadow-sm' : 'text-muted-foreground')}
+              >
+                Lunas
+              </button>
+            </div>
+
+            {paymentMode === 'dp' && (
+              <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-2.5 space-y-2 animate-in fade-in duration-200">
+                <div className="flex justify-between items-center">
+                  <span className="font-semibold text-amber-900 text-xs">Nominal DP</span>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setDpAmount(String(Math.round(total * 0.3)))}
+                      className="text-[10px] bg-background border border-amber-200 px-1.5 py-0.5 rounded text-amber-800 hover:bg-amber-100"
+                    >
+                      30%
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDpAmount(String(Math.round(total * 0.5)))}
+                      className="text-[10px] bg-background border border-amber-200 px-1.5 py-0.5 rounded text-amber-800 hover:bg-amber-100"
+                    >
+                      50%
+                    </button>
+                  </div>
+                </div>
+                <div className="relative">
+                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs font-bold">Rp</span>
+                  <Input
+                    type="number"
+                    value={dpAmount}
+                    onChange={e => setDpAmount(e.target.value)}
+                    className="pl-8 h-8 text-xs font-bold bg-white"
+                    placeholder="0"
+                  />
+                </div>
+                <div className="flex justify-between text-[11px] pt-0.5">
+                  <span className="text-muted-foreground">Sisa Pelunasan:</span>
+                  <span className="font-bold text-amber-700">{fmt(Math.max(0, total - (parseFloat(dpAmount) || 0)))}</span>
+                </div>
+              </div>
+            )}
+
+            {paymentMode !== 'pending' && (
+              <div className="space-y-1 pt-1">
+                <span className="text-[10px] text-muted-foreground block">Cara Bayar {paymentMode === 'dp' ? 'DP' : 'Lunas'}:</span>
+                <div className="grid grid-cols-4 gap-1 text-[11px]">
+                  {['cash', 'qris', 'transfer', 'card'].map(m => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setPaymentMethod(m)}
+                      className={cn(
+                        'py-1 rounded-lg border font-medium capitalize transition-all text-center',
+                        paymentMethod === m ? 'border-primary bg-primary/10 text-primary font-bold' : 'border-border text-muted-foreground'
+                      )}
+                    >
+                      {m === 'cash' ? '💵 Tunai' : m === 'qris' ? '📱 QRIS' : m === 'transfer' ? '🏦 TF' : '💳 Kartu'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-1 text-sm pt-2 border-t">
             <div className="flex justify-between text-muted-foreground text-xs">
               <span>{totalItems} item · Subtotal</span><span>{fmt(subtotal)}</span>
             </div>
@@ -339,15 +666,27 @@ function WaiterCart({ cart, selectedTable, customerName, setCustomerName, select
                 <span>Pajak ({taxRate}%)</span><span>{fmt(taxAmt)}</span>
               </div>
             )}
-            <div className="flex justify-between font-bold text-base pt-1.5 border-t">
-              <span>Total</span><span className="text-primary">{fmt(total)}</span>
+            <div className="flex justify-between font-bold text-base pt-1 border-t">
+              <span>Total Tagihan</span><span className="text-primary">{fmt(total)}</span>
             </div>
+            {paymentMode === 'dp' && (
+              <div className="flex justify-between text-xs font-semibold text-amber-700 bg-amber-50 px-2 py-1 rounded">
+                <span>DP Dibayar Sekarang:</span>
+                <span>{fmt(parseFloat(dpAmount) || 0)}</span>
+              </div>
+            )}
           </div>
+
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={onClear} className="h-10 px-3" title="Kosongkan keranjang">
               <Trash2 className="w-4 h-4 text-destructive" />
             </Button>
-            <Button size="sm" onClick={onPlaceOrder} disabled={placing || !selectedTable} className="flex-1 h-10 gap-2 text-sm font-semibold">
+            <Button
+              size="sm"
+              onClick={onPlaceOrder}
+              disabled={placing || (orderType === 'dine-in' && !selectedTable)}
+              className="flex-1 h-10 gap-2 text-sm font-semibold"
+            >
               {placing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
               {placing ? 'Memproses…' : 'Kirim Pesanan'}
             </Button>
@@ -402,6 +741,7 @@ function CartItem({ item, fmt, onQtyChange, onRemove, onNoteChange }) {
 
 // ─── Customer Picker ──────────────────────────────────────────
 function CustomerPicker({ selected, onSelect, customerName, setCustomerName, fmt }) {
+  const toast = useToast();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [searching, setSearching] = useState(false);
@@ -443,7 +783,7 @@ function CustomerPicker({ selected, onSelect, customerName, setCustomerName, fmt
         onSelect(err.response.data.user);
         setShowRegister(false); setQuery(''); setShowDropdown(false);
       } else {
-        alert(err.response?.data?.error || 'Gagal mendaftarkan member');
+        toast.error(err.response?.data?.error || 'Gagal mendaftarkan member');
       }
     } finally { setRegistering(false); }
   };
@@ -578,7 +918,17 @@ function TablePickerDialog({ open, onClose, tables, selected, onSelect }) {
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle>Pilih Meja</DialogTitle></DialogHeader>
+        <DialogHeader className="flex flex-row items-center justify-between space-y-0 pr-6 pb-1">
+          <DialogTitle>Pilih Meja</DialogTitle>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => { onSelect(null); onClose(); }}
+            className="text-xs text-muted-foreground hover:text-destructive h-7 px-2"
+          >
+            Tanpa Meja
+          </Button>
+        </DialogHeader>
         <div className="space-y-3">
           {rooms.length > 0 && (
             <div className="flex gap-2 flex-wrap">
@@ -626,6 +976,7 @@ function TablePickerDialog({ open, onClose, tables, selected, onSelect }) {
 
 // ─── Variant / Addon Picker Dialog ────────────────────────────
 function VariantPickerDialog({ product, onClose, onConfirm, fmt }) {
+  const toast = useToast();
   const { data, loading } = useFetch(`/variants/${product.id}`);
   const [selVariants, setSelVariants] = useState({});
   const [selAddons, setSelAddons] = useState({});
@@ -650,7 +1001,7 @@ function VariantPickerDialog({ product, onClose, onConfirm, fmt }) {
 
   const handleConfirm = () => {
     for (const g of variantGroups) {
-      if (g.is_required && !selVariants[g.id]) { alert(`Pilih ${g.name} terlebih dulu`); return; }
+      if (g.is_required && !selVariants[g.id]) { toast.warning(`Pilih ${g.name} terlebih dulu`); return; }
     }
     const variants = Object.entries(selVariants).filter(([, o]) => o).map(([gid, opt]) => ({
       group_id: parseInt(gid), option_id: opt.id, option_name: opt.name, price_modifier: opt.price_modifier,

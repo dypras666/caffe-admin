@@ -10,6 +10,7 @@ const PAGE_TITLES = {
   '/orders': 'Manajemen Pesanan',
   '/products': 'Manajemen Produk',
   '/categories': 'Kategori Produk',
+  '/services': 'Layanan & Booking',
   '/bookings': 'Manajemen Booking',
   '/rooms': 'Manajemen Room',
   '/tables': 'Manajemen Meja',

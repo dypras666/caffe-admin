@@ -164,7 +164,7 @@ function TabRingkasan() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-nowrap overflow-x-auto hide-scrollbar items-center gap-2 pb-1">
         <DateRangePicker from={from} to={to} onFrom={setFrom} onTo={setTo} />
         <BranchCashierFilter branchId={branchId} cashierId={cashierId} onBranch={setBranchId} onCashier={setCashierId} />
         <Button size="sm" variant="outline" onClick={refetch} className="gap-1.5 h-8 text-xs">
@@ -287,7 +287,7 @@ function TabPerProduk() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-nowrap overflow-x-auto hide-scrollbar items-center gap-2 pb-1">
         <DateRangePicker from={from} to={to} onFrom={setFrom} onTo={setTo} />
         <BranchCashierFilter branchId={branchId} cashierId={cashierId} onBranch={(v) => { setBranchId(v); setCashierId('all'); }} onCashier={setCashierId} />
         <Select value={filterCat} onValueChange={setFilterCat}>
@@ -407,7 +407,7 @@ function TabPerJam() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-nowrap overflow-x-auto hide-scrollbar items-center gap-2 pb-1">
         <DateRangePicker from={from} to={to} onFrom={setFrom} onTo={setTo} />
         <BranchCashierFilter branchId={branchId} cashierId={cashierId} onBranch={(v) => { setBranchId(v); setCashierId('all'); }} onCashier={setCashierId} />
         <Button size="sm" variant="outline" onClick={refetch} className="gap-1.5 h-8 text-xs">
@@ -533,7 +533,7 @@ function TabPerMeja() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-nowrap overflow-x-auto hide-scrollbar items-center gap-2 pb-1">
         <DateRangePicker from={from} to={to} onFrom={setFrom} onTo={setTo} />
         <BranchCashierFilter branchId={branchId} cashierId={cashierId} onBranch={(v) => { setBranchId(v); setCashierId('all'); }} onCashier={setCashierId} />
         <Button size="sm" variant="outline" onClick={refetch} className="gap-1.5 h-8 text-xs">
@@ -619,21 +619,70 @@ function TabPerStaff() {
   const [from, setFrom] = useState(() => daysAgo(29));
   const [to, setTo] = useState(todayStr);
   const [branchId, setBranchId] = useState('all');
+  const [cashierId, setCashierId] = useState('all');
 
   const qs = new URLSearchParams({ date_from: from, date_to: to });
   if (branchId !== 'all') qs.set('branch_id', branchId);
+  if (cashierId !== 'all') qs.set('cashier_id', cashierId);
 
   const { data, loading, refetch } = useFetch(`/reports/staff?${qs}`);
   const staff = data?.staff || [];
 
+  const doExportExcel = () => {
+    if (!staff.length) return;
+    const sheet = {
+      name: 'Per Kasir',
+      columns: ['#', 'Nama Staff', 'Role', 'Order Ditangani', 'Revenue', 'Tips'],
+      rows: staff.map((s, i) => [
+        i + 1,
+        s.name || s.user_name,
+        s.role || 'kasir',
+        Number(s.orders_handled || 0),
+        Number(s.revenue_handled || 0),
+        Number(s.tips || 0),
+      ]),
+    };
+    exportExcel([sheet], `PerKasir_${from}_${to}`);
+  };
+
+  const doExportPDF = () => {
+    if (!staff.length) return;
+    exportPDF({
+      title: 'Laporan Kinerja Kasir & Staff',
+      subtitle: getCafeName(),
+      period: `${from} s/d ${to}`,
+      filename: `perkasir_${from}_${to}`,
+      tables: [{
+        title: 'Kinerja Staff',
+        columns: ['No', 'Nama Staff', 'Role', 'Order Ditangani', 'Revenue', 'Tips'],
+        rows: staff.map((s, i) => [
+          String(i + 1),
+          s.name || s.user_name || '-',
+          s.role || 'kasir',
+          Number(s.orders_handled || 0).toLocaleString('id'),
+          `Rp ${Number(s.revenue_handled || 0).toLocaleString('id')}`,
+          `Rp ${Number(s.tips || 0).toLocaleString('id')}`,
+        ]),
+      }],
+    });
+  };
+
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-nowrap overflow-x-auto hide-scrollbar items-center gap-2 pb-1">
         <DateRangePicker from={from} to={to} onFrom={setFrom} onTo={setTo} />
-        <BranchCashierFilter branchId={branchId} cashierId="all" onBranch={setBranchId} onCashier={() => { }} showCashier={false} />
-        <Button size="sm" variant="outline" onClick={refetch} className="gap-1.5 h-8 text-xs">
+        <BranchCashierFilter branchId={branchId} cashierId={cashierId} onBranch={(v) => { setBranchId(v); setCashierId('all'); }} onCashier={setCashierId} showCashier={true} />
+        <Button size="sm" variant="outline" onClick={refetch} className="gap-1.5 h-8 text-xs shrink-0">
           <RefreshCw className="w-3.5 h-3.5" /> Refresh
         </Button>
+        {!loading && staff.length > 0 && (<>
+          <Button size="sm" variant="outline" className="gap-1.5 h-8 text-xs text-green-700 border-green-300 hover:bg-green-50 shrink-0" onClick={doExportExcel}>
+            <FileSpreadsheet className="w-3.5 h-3.5" />Excel
+          </Button>
+          <Button size="sm" variant="outline" className="gap-1.5 h-8 text-xs text-red-700 border-red-300 hover:bg-red-50 shrink-0" onClick={doExportPDF}>
+            <FileText className="w-3.5 h-3.5" />PDF
+          </Button>
+        </>)}
       </div>
 
       {loading ? <LoadingCenter /> : (
@@ -660,9 +709,9 @@ function TabPerStaff() {
                     <TableCell>
                       {s.role && <Badge variant="outline" className="text-xs capitalize">{s.role}</Badge>}
                     </TableCell>
-                    <TableCell className="text-right font-semibold">{Number(s.orders || s.transactions || 0).toLocaleString('id')}</TableCell>
-                    <TableCell className="text-right">{formatRp(s.revenue)}</TableCell>
-                    <TableCell className="text-right">{formatRp(s.tips)}</TableCell>
+                    <TableCell className="text-right font-semibold">{Number(s.orders_handled || s.orders || s.transactions || 0).toLocaleString('id')}</TableCell>
+                    <TableCell className="text-right">{formatRp(s.revenue_handled || s.revenue)}</TableCell>
+                    <TableCell className="text-right">{formatRp(s.tips || 0)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -688,7 +737,7 @@ function TabPerShift() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-nowrap overflow-x-auto hide-scrollbar items-center gap-2 pb-1">
         <DateRangePicker from={from} to={to} onFrom={setFrom} onTo={setTo} />
         <BranchCashierFilter branchId={branchId} cashierId="all" onBranch={setBranchId} onCashier={() => { }} showCashier={false} />
         <Button size="sm" variant="outline" onClick={refetch} className="gap-1.5 h-8 text-xs">
@@ -770,7 +819,7 @@ function TabPerPembayaran() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-nowrap overflow-x-auto hide-scrollbar items-center gap-2 pb-1">
         <DateRangePicker from={from} to={to} onFrom={setFrom} onTo={setTo} />
         <BranchCashierFilter branchId={branchId} cashierId={cashierId} onBranch={(v) => { setBranchId(v); setCashierId('all'); }} onCashier={setCashierId} />
         <Button size="sm" variant="outline" onClick={refetch} className="gap-1.5 h-8 text-xs">
@@ -1004,7 +1053,7 @@ function TabTransaksi() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-nowrap overflow-x-auto hide-scrollbar items-center gap-2 pb-1">
         <DateRangePicker from={from} to={to} onFrom={setFrom} onTo={setTo} />
         <BranchCashierFilter branchId={branchId} cashierId={cashierId} onBranch={(v) => { setBranchId(v); setCashierId('all'); }} onCashier={setCashierId} />
         <Button size="sm" variant="outline" onClick={refetch} className="gap-1.5 h-8 text-xs">
@@ -1068,6 +1117,318 @@ function TabTransaksi() {
   );
 }
 
+/* ─── Tab — Layanan & Booking ─────────────────────────────────────────────── */
+const STATUS_LABELS = {
+  pending: 'Pending',
+  confirmed: 'Dikonfirmasi',
+  in_progress: 'Dikerjakan',
+  completed: 'Selesai',
+  cancelled: 'Dibatalkan',
+};
+const STATUS_COLORS = {
+  pending: '#f59e0b',
+  confirmed: '#3b82f6',
+  in_progress: '#8b5cf6',
+  completed: '#10b981',
+  cancelled: '#ef4444',
+};
+
+function TabLayanan() {
+  const [from, setFrom] = useState(() => daysAgo(29));
+  const [to, setTo] = useState(todayStr);
+  const [branchId, setBranchId] = useState('all');
+  const [cashierId, setCashierId] = useState('all');
+  const [serviceType, setServiceType] = useState('all');
+
+  const qs = new URLSearchParams({ date_from: from, date_to: to });
+  if (branchId !== 'all') qs.set('branch_id', branchId);
+  if (cashierId !== 'all') qs.set('cashier_id', cashierId);
+  if (serviceType !== 'all') qs.set('service_type', serviceType);
+
+  const { data, loading, refetch } = useFetch(`/reports/services?${qs}`);
+
+  const summary = data?.summary || {};
+  const dailyTrend = data?.daily_trend || [];
+  const statusBreakdown = (data?.status_breakdown || []).map(s => ({
+    name: STATUS_LABELS[s.status] || s.status,
+    value: s.count,
+    revenue: s.value,
+    fill: STATUS_COLORS[s.status] || '#6b7280',
+  }));
+  const typeBreakdown = (data?.type_breakdown || []).map(t => ({
+    name: t.type_label,
+    count: t.count,
+    value: t.value,
+  }));
+  const orders = data?.orders || [];
+
+  const doExportExcel = () => {
+    if (!orders.length) return;
+    const sheet = {
+      name: 'Layanan & Booking',
+      columns: ['Tanggal', 'Order ID', 'Pelanggan', 'Tipe', 'Jadwal', 'Total', 'Dibayar', 'Sisa', 'Status'],
+      rows: orders.map(o => [
+        new Date(o.created_at).toLocaleString('id-ID'),
+        o.order_number,
+        o.customer_name || 'Walk-in',
+        o.order_type === 'booking' ? 'Booking' : o.order_type === 'preorder' ? 'Pre-Order' : 'Layanan',
+        `${o.service_date || '-'} ${o.service_time || ''}`.trim(),
+        Number(o.total || 0),
+        Number(o.paid_amount || 0),
+        Number(o.remaining_amount || 0),
+        STATUS_LABELS[o.service_status] || o.service_status || 'Pending',
+      ]),
+    };
+    exportExcel([sheet], `Layanan_${from}_${to}`);
+  };
+
+  const doExportPDF = () => {
+    if (!orders.length) return;
+    exportPDF({
+      title: 'Laporan Layanan & Booking',
+      subtitle: getCafeName(),
+      period: `${from} s/d ${to}`,
+      filename: `layanan_${from}_${to}`,
+      tables: [{
+        title: 'Daftar Order Layanan',
+        columns: ['Tanggal', 'Order ID', 'Pelanggan', 'Tipe', 'Total', 'Dibayar', 'Status'],
+        rows: orders.map(o => [
+          new Date(o.created_at).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' }),
+          o.order_number,
+          o.customer_name || '-',
+          o.order_type === 'booking' ? 'Booking' : o.order_type === 'preorder' ? 'PO' : 'Layanan',
+          `Rp ${Number(o.total || 0).toLocaleString('id')}`,
+          `Rp ${Number(o.paid_amount || 0).toLocaleString('id')}`,
+          STATUS_LABELS[o.service_status] || 'Pending',
+        ]),
+      }],
+    });
+  };
+
+  return (
+    <div className="space-y-5">
+      {/* Filters */}
+      <div className="flex flex-nowrap overflow-x-auto hide-scrollbar items-center gap-2 pb-1">
+        <DateRangePicker from={from} to={to} onFrom={setFrom} onTo={setTo} />
+        <BranchCashierFilter branchId={branchId} cashierId={cashierId} onBranch={(v) => { setBranchId(v); setCashierId('all'); }} onCashier={setCashierId} />
+        <Select value={serviceType} onValueChange={setServiceType}>
+          <SelectTrigger className="w-[130px] h-8 text-xs shrink-0"><SelectValue placeholder="Semua Tipe" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Semua Tipe</SelectItem>
+            <SelectItem value="booking">Booking</SelectItem>
+            <SelectItem value="preorder">Pre-Order</SelectItem>
+            <SelectItem value="service">Layanan Jasa</SelectItem>
+          </SelectContent>
+        </Select>
+        <Button size="sm" variant="outline" onClick={refetch} className="gap-1.5 h-8 text-xs">
+          <RefreshCw className="w-3.5 h-3.5" /> Refresh
+        </Button>
+        {!loading && orders.length > 0 && (<>
+          <Button size="sm" variant="outline" className="gap-1.5 h-8 text-xs text-green-700 border-green-300 hover:bg-green-50" onClick={doExportExcel}>
+            <FileSpreadsheet className="w-3.5 h-3.5" />Excel
+          </Button>
+          <Button size="sm" variant="outline" className="gap-1.5 h-8 text-xs text-red-700 border-red-300 hover:bg-red-50" onClick={doExportPDF}>
+            <FileText className="w-3.5 h-3.5" />PDF
+          </Button>
+        </>)}
+      </div>
+
+      {loading ? <LoadingCenter /> : (
+        <>
+          {/* Cashflow Cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <StatCard icon={ShoppingBag} label="Total Order Layanan" value={Number(summary.total_orders || 0).toLocaleString('id')} color="bg-primary" />
+            <StatCard icon={TrendingUp} label="Total Nilai" value={formatRp(summary.total_value)} color="bg-emerald-600" />
+            <Card>
+              <CardContent className="pt-5 flex items-start gap-4">
+                <div className="bg-blue-600 w-10 h-10 rounded-xl flex items-center justify-center shrink-0">
+                  <TrendingUp className="w-5 h-5 text-white" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-muted-foreground text-xs">Sudah Dibayar (DP + Lunas)</p>
+                  <p className="text-xl font-bold mt-0.5 text-emerald-700">{formatRp(summary.total_paid)}</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-5 flex items-start gap-4">
+                <div className="bg-amber-500 w-10 h-10 rounded-xl flex items-center justify-center shrink-0">
+                  <Clock className="w-5 h-5 text-white" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-muted-foreground text-xs">Sisa Belum Lunas</p>
+                  <p className="text-xl font-bold mt-0.5 text-amber-700">{formatRp(summary.total_remaining)}</p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Status count badges row */}
+          <div className="flex flex-wrap items-center gap-2">
+            {Object.entries(summary.status_counts || {}).map(([k, v]) => (
+              <div key={k} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border bg-card text-xs font-medium">
+                <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: STATUS_COLORS[k] || '#6b7280' }} />
+                <span className="text-muted-foreground">{STATUS_LABELS[k]}:</span>
+                <span className="font-bold">{v}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Charts Row */}
+          <div className="grid lg:grid-cols-3 gap-5">
+            {/* Daily Trend */}
+            <Card className="lg:col-span-2">
+              <CardHeader><CardTitle className="text-sm">Tren Harian Layanan & Booking</CardTitle></CardHeader>
+              <CardContent>
+                {dailyTrend.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={240}>
+                    <BarChart data={dailyTrend}>
+                      <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+                      <YAxis tick={{ fontSize: 10 }} />
+                      <Tooltip
+                        formatter={(v, name) => [
+                          name === 'total_value' ? formatRp(v) : v,
+                          name === 'total_value' ? 'Nilai' : name === 'booking_count' ? 'Booking' : name === 'preorder_count' ? 'Pre-Order' : name === 'service_count' ? 'Layanan' : 'Order',
+                        ]}
+                      />
+                      <Legend formatter={(v) => v === 'booking_count' ? 'Booking' : v === 'preorder_count' ? 'Pre-Order' : v === 'service_count' ? 'Layanan' : v} />
+                      <Bar dataKey="booking_count" stackId="a" fill="#3b82f6" radius={[0, 0, 0, 0]} />
+                      <Bar dataKey="preorder_count" stackId="a" fill="#f59e0b" />
+                      <Bar dataKey="service_count" stackId="a" fill="#8b5cf6" radius={[3, 3, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : <EmptyState text="Belum ada data layanan" />}
+              </CardContent>
+            </Card>
+
+            {/* Status Breakdown Pie */}
+            <Card>
+              <CardHeader><CardTitle className="text-sm">Breakdown Status</CardTitle></CardHeader>
+              <CardContent>
+                {statusBreakdown.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={240}>
+                    <PieChart>
+                      <Pie
+                        data={statusBreakdown}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        outerRadius={72}
+                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                        labelLine={false}
+                      >
+                        {statusBreakdown.map((entry, i) => (
+                          <Cell key={i} fill={entry.fill} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(v, name) => [`${v} order`, name]} />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : <EmptyState />}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Type Breakdown Bar */}
+          {typeBreakdown.length > 0 && (
+            <Card>
+              <CardHeader><CardTitle className="text-sm">Revenue per Tipe Layanan</CardTitle></CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart data={typeBreakdown} layout="vertical" margin={{ left: 20, right: 20 }}>
+                    <XAxis type="number" tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} tick={{ fontSize: 10 }} />
+                    <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={130} />
+                    <Tooltip formatter={(v) => formatRp(v)} />
+                    <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={28}>
+                      {typeBreakdown.map((_, i) => (
+                        <Cell key={i} fill={['#3b82f6', '#f59e0b', '#8b5cf6'][i % 3]} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Detailed Table */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">Daftar Order Layanan ({orders.length})</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Order</TableHead>
+                      <TableHead>Pelanggan</TableHead>
+                      <TableHead>Tipe</TableHead>
+                      <TableHead>Jadwal</TableHead>
+                      <TableHead className="text-right">Total</TableHead>
+                      <TableHead className="text-right">Dibayar</TableHead>
+                      <TableHead className="text-right">Sisa</TableHead>
+                      <TableHead>Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {orders.length === 0 ? (
+                      <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-12">Belum ada data layanan</TableCell></TableRow>
+                    ) : orders.map(o => {
+                      const remaining = o.remaining_amount != null ? o.remaining_amount : Math.max(0, (o.total || 0) - (o.paid_amount || 0));
+                      const typeLabel = o.order_type === 'booking' ? 'Booking' : o.order_type === 'preorder' ? 'PO' : 'Layanan';
+                      const typeCls = o.order_type === 'booking' ? 'border-blue-400 text-blue-700 bg-blue-50' :
+                        o.order_type === 'preorder' ? 'border-amber-400 text-amber-700 bg-amber-50' :
+                        'border-purple-400 text-purple-700 bg-purple-50';
+                      const statusColor = STATUS_COLORS[o.service_status || 'pending'] || '#6b7280';
+
+                      return (
+                        <TableRow key={o.id}>
+                          <TableCell>
+                            <span className="font-mono text-xs font-bold text-primary">{o.order_number}</span>
+                            <div className="text-[10px] text-muted-foreground mt-0.5">
+                              {new Date(o.created_at).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <span className="text-sm font-medium">{o.customer_name || '-'}</span>
+                            {o.customer_phone && <div className="text-[10px] text-muted-foreground">{o.customer_phone}</div>}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className={`text-[10px] ${typeCls}`}>{typeLabel}</Badge>
+                          </TableCell>
+                          <TableCell className="text-xs">
+                            {o.service_date || '-'}
+                            {o.service_time && <span className="ml-1 font-mono text-[10px] bg-blue-50 text-blue-700 px-1 rounded">{o.service_time}</span>}
+                          </TableCell>
+                          <TableCell className="text-right font-semibold text-sm">{formatRp(o.total)}</TableCell>
+                          <TableCell className="text-right text-emerald-700 text-sm">{formatRp(o.paid_amount || 0)}</TableCell>
+                          <TableCell className={`text-right text-sm ${remaining > 0 ? 'text-amber-700 font-semibold' : 'text-muted-foreground'}`}>
+                            {remaining > 0 ? formatRp(remaining) : '—'}
+                          </TableCell>
+                          <TableCell>
+                            <span
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold text-white"
+                              style={{ backgroundColor: statusColor }}
+                            >
+                              {STATUS_LABELS[o.service_status || 'pending']}
+                            </span>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </>
+      )}
+    </div>
+  );
+}
+
 /* ─── Main Page ───────────────────────────────────────────────────────────── */
 export default function ReportsPage() {
   const { user } = useAuth();
@@ -1107,6 +1468,7 @@ export default function ReportsPage() {
           <TabsTrigger value="meja">Per Meja</TabsTrigger>
           <TabsTrigger value="pembayaran">Pembayaran</TabsTrigger>
           <TabsTrigger value="transaksi">Transaksi</TabsTrigger>
+          <TabsTrigger value="layanan">Layanan & Booking</TabsTrigger>
           {isAdmin && <TabsTrigger value="staff">Per Kasir</TabsTrigger>}
           {shiftEnabled && <TabsTrigger value="shift">Shift</TabsTrigger>}
         </TabsList>
@@ -1117,6 +1479,7 @@ export default function ReportsPage() {
         <TabsContent value="meja" className="mt-5"><TabPerMeja /></TabsContent>
         <TabsContent value="pembayaran" className="mt-5"><TabPerPembayaran /></TabsContent>
         <TabsContent value="transaksi" className="mt-5"><TabTransaksi /></TabsContent>
+        <TabsContent value="layanan" className="mt-5"><TabLayanan /></TabsContent>
         {isAdmin && <TabsContent value="staff" className="mt-5"><TabPerStaff /></TabsContent>}
         {shiftEnabled && <TabsContent value="shift" className="mt-5"><TabPerShift /></TabsContent>}
       </Tabs>

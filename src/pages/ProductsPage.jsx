@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useFetch, useDebounce } from '../hooks/useApi';
 import { usePermissions } from '../context/PermissionsContext';
 import api from '../lib/api';
+import { useToast } from '../components/ui/toast';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -17,6 +18,11 @@ const EMPTY_FORM = {
   name: '', description: '', price: '', cost_price: '', sku: '',
   category_id: '', is_popular: false, is_available: true,
   image: '', gallery: [],
+  product_type: 'product',
+  service_type: 'booking',
+  duration_minutes: '',
+  lead_time_days: '0',
+  requires_schedule: true,
 };
 
 const EMPTY_STOCK_FORM = {
@@ -26,11 +32,13 @@ const EMPTY_STOCK_FORM = {
 };
 
 export default function ProductsPage() {
+  const toast = useToast();
   const { can } = usePermissions();
   const canCreate = can('create', 'products');
   const canUpdate = can('update', 'products');
   const canDelete = can('delete', 'products');
   const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState('all'); // 'all' | 'product' | 'service'
   const [page, setPage] = useState(1);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -46,7 +54,7 @@ export default function ProductsPage() {
   const [quickAdjusting, setQuickAdjusting] = useState(null); // product id being adjusted
 
   const debouncedSearch = useDebounce(search, 350);
-  const qs = `?page=${page}&limit=12${debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ''}`;
+  const qs = `?page=${page}&limit=12${debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ''}${typeFilter !== 'all' ? `&product_type=${typeFilter}` : ''}`;
   const { data, loading, refetch } = useFetch(`/products${qs}`);
   const { data: catData } = useFetch('/categories');
 
@@ -64,8 +72,13 @@ export default function ProductsPage() {
     setForm({
       name: p.name, description: p.description || '', price: p.price,
       cost_price: p.cost_price || '', sku: p.sku || '',
-      category_id: String(p.category_id), is_popular: !!p.is_popular, is_available: !!p.is_available,
+      category_id: String(p.category_id || ''), is_popular: !!p.is_popular, is_available: !!p.is_available,
       image: p.image || '', gallery,
+      product_type: p.product_type || 'product',
+      service_type: p.service_type || 'booking',
+      duration_minutes: p.duration_minutes ? String(p.duration_minutes) : '',
+      lead_time_days: p.lead_time_days !== undefined && p.lead_time_days !== null ? String(p.lead_time_days) : '0',
+      requires_schedule: p.requires_schedule !== 0,
     });
     setEditId(p.id);
     setOpen(true);
@@ -81,20 +94,31 @@ export default function ProductsPage() {
     e.preventDefault();
     setSaving(true);
     try {
+      const isService = form.product_type === 'service';
       const payload = {
         ...form,
         price: parseFloat(form.price),
         cost_price: form.cost_price ? parseFloat(form.cost_price) : 0,
-        category_id: parseInt(form.category_id),
+        category_id: form.category_id ? parseInt(form.category_id) : null,
         image: form.gallery?.[0] || form.image || '',
         gallery: JSON.stringify(form.gallery || []),
+        product_type: form.product_type || 'product',
+        service_type: isService ? (form.service_type || 'booking') : null,
+        duration_minutes: isService && form.duration_minutes ? parseInt(form.duration_minutes) : null,
+        lead_time_days: isService && form.lead_time_days ? parseInt(form.lead_time_days) : 0,
+        requires_schedule: isService ? (form.requires_schedule ? 1 : 0) : 0,
       };
-      if (editId) await api.put(`/products/${editId}`, payload);
-      else await api.post('/products', payload);
+      if (editId) {
+        await api.put(`/products/${editId}`, payload);
+        toast.success('Produk berhasil diperbarui');
+      } else {
+        await api.post('/products', payload);
+        toast.success('Produk berhasil ditambahkan');
+      }
       setOpen(false);
       refetch();
     } catch (err) {
-      alert(err.response?.data?.error || 'Gagal menyimpan');
+      toast.error(err.response?.data?.error || 'Gagal menyimpan');
     } finally {
       setSaving(false);
     }
@@ -102,7 +126,7 @@ export default function ProductsPage() {
 
   const handleStockAdjust = async (e) => {
     e.preventDefault();
-    if (!stockForm.qty_change) { alert('qty_change wajib diisi'); return; }
+    if (!stockForm.qty_change) { toast.warning('Jumlah penyesuaian stok wajib diisi'); return; }
     setStockSaving(true);
     try {
       await api.patch(`/products/${stockProduct.id}/stock`, {
@@ -110,10 +134,11 @@ export default function ProductsPage() {
         movement_type: stockForm.movement_type,
         note: stockForm.note || undefined,
       });
+      toast.success('Stok berhasil disesuaikan');
       setStockOpen(false);
       refetch();
     } catch (err) {
-      alert(err.response?.data?.error || 'Gagal menyesuaikan stok');
+      toast.error(err.response?.data?.error || 'Gagal menyesuaikan stok');
     } finally {
       setStockSaving(false);
     }
@@ -130,9 +155,10 @@ export default function ProductsPage() {
         movement_type: delta > 0 ? 'in' : 'adjustment',
         note: delta > 0 ? 'Tambah stok cepat' : 'Kurang stok cepat',
       });
+      toast.success(`Stok ${product.name} berhasil diubah (${delta > 0 ? '+' : ''}${delta})`);
       refetch();
     } catch (err) {
-      alert(err.response?.data?.error || 'Gagal');
+      toast.error(err.response?.data?.error || 'Gagal');
     } finally {
       setQuickAdjusting(null);
     }
@@ -142,9 +168,10 @@ export default function ProductsPage() {
     if (!confirm('Hapus produk ini?')) return;
     try {
       await api.delete(`/products/${id}`);
+      toast.success('Produk berhasil dihapus');
       refetch();
     } catch (err) {
-      alert(err.response?.data?.error || 'Gagal menghapus');
+      toast.error(err.response?.data?.error || 'Gagal menghapus');
     }
   };
 
@@ -154,16 +181,39 @@ export default function ProductsPage() {
         <div className="relative flex-1 max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
-            placeholder="Cari produk..."
+            placeholder="Cari produk / layanan..."
             value={search}
             onChange={e => { setSearch(e.target.value); setPage(1); }}
             className="pl-9"
           />
         </div>
+        <div className="flex items-center gap-1 bg-muted p-1 rounded-lg">
+          <button
+            type="button"
+            onClick={() => { setTypeFilter('all'); setPage(1); }}
+            className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${typeFilter === 'all' ? 'bg-background shadow-sm text-foreground font-semibold' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            Semua
+          </button>
+          <button
+            type="button"
+            onClick={() => { setTypeFilter('product'); setPage(1); }}
+            className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${typeFilter === 'product' ? 'bg-background shadow-sm text-foreground font-semibold' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            Produk Fisik (F&B)
+          </button>
+          <button
+            type="button"
+            onClick={() => { setTypeFilter('service'); setPage(1); }}
+            className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${typeFilter === 'service' ? 'bg-background shadow-sm text-blue-600 font-semibold' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            Layanan & Jasa
+          </button>
+        </div>
         {canCreate && (
           <Button onClick={openCreate} className="gap-1.5 ml-auto">
             <Plus className="w-4 h-4" />
-            Tambah Produk
+            Tambah Produk / Layanan
           </Button>
         )}
       </div>
@@ -176,18 +226,18 @@ export default function ProductsPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Produk</TableHead>
+                  <TableHead>Item / Layanan</TableHead>
                   <TableHead>SKU</TableHead>
                   <TableHead>Kategori</TableHead>
                   <TableHead>Harga</TableHead>
-                  <TableHead>Stok</TableHead>
+                  <TableHead>Stok / Tipe</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Aksi</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {products.length === 0 ? (
-                  <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-12">Tidak ada produk</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-12">Tidak ada produk atau layanan</TableCell></TableRow>
                 ) : products.map(p => (
                   <TableRow key={p.id}>
                     <TableCell>
@@ -201,8 +251,16 @@ export default function ProductsPage() {
                           </div>
                         )}
                         <div>
-                          <p className="font-medium">{p.name}</p>
-                          {p.description && <p className="text-xs text-muted-foreground truncate max-w-[160px]">{p.description}</p>}
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <p className="font-medium">{p.name}</p>
+                            {p.product_type === 'service' ? (
+                              <Badge variant="secondary" className="text-[10px] py-0 px-1.5 font-mono bg-blue-100 text-blue-800 border-blue-200">
+                                {p.service_type === 'booking' ? 'Booking' : p.service_type === 'preorder' ? 'Pre-Order' : 'Jasa'}
+                                {p.duration_minutes ? ` · ${p.duration_minutes}m` : ''}
+                              </Badge>
+                            ) : null}
+                          </div>
+                          {p.description && <p className="text-xs text-muted-foreground truncate max-w-[180px]">{p.description}</p>}
                         </div>
                       </div>
                     </TableCell>
@@ -210,27 +268,31 @@ export default function ProductsPage() {
                     <TableCell className="text-sm">{p.category_name || '—'}</TableCell>
                     <TableCell className="font-semibold">{formatRp(p.price)}</TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => quickAdjust(p, -1)}
-                          disabled={quickAdjusting === p.id || p.stock <= 0}
-                          className="w-5 h-5 rounded flex items-center justify-center bg-muted hover:bg-red-100 hover:text-red-600 disabled:opacity-30 transition-colors"
-                          title="Kurangi 1"
-                        >
-                          {quickAdjusting === p.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Minus className="w-3 h-3" />}
-                        </button>
-                        <span className={`w-8 text-center text-sm font-semibold tabular-nums ${p.stock === 0 ? 'text-red-600' : p.stock <= (p.min_stock || 0) && p.min_stock > 0 ? 'text-amber-600' : ''}`}>
-                          {p.stock}
-                        </span>
-                        <button
-                          onClick={() => quickAdjust(p, 1)}
-                          disabled={quickAdjusting === p.id}
-                          className="w-5 h-5 rounded flex items-center justify-center bg-muted hover:bg-green-100 hover:text-green-600 disabled:opacity-30 transition-colors"
-                          title="Tambah 1"
-                        >
-                          {quickAdjusting === p.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
-                        </button>
-                      </div>
+                      {p.product_type === 'service' ? (
+                        <span className="text-xs text-muted-foreground italic bg-muted/60 px-2 py-0.5 rounded">Jasa / Unlimited</span>
+                      ) : (
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => quickAdjust(p, -1)}
+                            disabled={quickAdjusting === p.id || p.stock <= 0}
+                            className="w-5 h-5 rounded flex items-center justify-center bg-muted hover:bg-red-100 hover:text-red-600 disabled:opacity-30 transition-colors"
+                            title="Kurangi 1"
+                          >
+                            {quickAdjusting === p.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Minus className="w-3 h-3" />}
+                          </button>
+                          <span className={`w-8 text-center text-sm font-semibold tabular-nums ${p.stock === 0 ? 'text-red-600' : p.stock <= (p.min_stock || 0) && p.min_stock > 0 ? 'text-amber-600' : ''}`}>
+                            {p.stock}
+                          </span>
+                          <button
+                            onClick={() => quickAdjust(p, 1)}
+                            disabled={quickAdjusting === p.id}
+                            className="w-5 h-5 rounded flex items-center justify-center bg-muted hover:bg-green-100 hover:text-green-600 disabled:opacity-30 transition-colors"
+                            title="Tambah 1"
+                          >
+                            {quickAdjusting === p.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+                          </button>
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-col gap-1">
@@ -242,18 +304,18 @@ export default function ProductsPage() {
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-1.5">
-                        {canUpdate && (
+                        {canUpdate && p.product_type !== 'service' && (
                           <Button variant="ghost" size="icon" title="Sesuaikan Stok" onClick={() => openStockAdjust(p)}>
                             <PackagePlus className="w-3.5 h-3.5" />
                           </Button>
                         )}
                         {canUpdate && (
-                          <Button variant="ghost" size="icon" onClick={() => openEdit(p)}>
+                          <Button variant="ghost" size="icon" title="Edit" onClick={() => openEdit(p)}>
                             <Pencil className="w-3.5 h-3.5" />
                           </Button>
                         )}
                         {canDelete && (
-                          <Button variant="ghost" size="icon" onClick={() => handleDelete(p.id)}
+                          <Button variant="ghost" size="icon" title="Hapus" onClick={() => handleDelete(p.id)}
                             className="text-destructive hover:bg-destructive/10">
                             <Trash2 className="w-3.5 h-3.5" />
                           </Button>
@@ -280,26 +342,105 @@ export default function ProductsPage() {
 
       {/* Create / Edit Dialog */}
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editId ? 'Edit Produk' : 'Tambah Produk Baru'}</DialogTitle>
+            <DialogTitle>{editId ? 'Edit Produk / Layanan' : 'Tambah Produk / Layanan Baru'}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSave} className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
+              {/* Tipe Item Selector */}
               <div className="col-span-2">
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">Nama Produk *</label>
+                <label className="text-xs font-semibold text-foreground mb-1.5 block">Tipe Item *</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setForm(f => ({ ...f, product_type: 'product' }))}
+                    className={`p-3 text-left border rounded-lg transition-all ${form.product_type === 'product' ? 'border-primary bg-primary/5 font-semibold text-primary ring-1 ring-primary' : 'border-input hover:bg-muted/50 text-muted-foreground'}`}
+                  >
+                    <div className="text-sm">Produk Fisik</div>
+                    <div className="text-[11px] font-normal opacity-80">Makanan, Minuman, Barang (pakai stok)</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setForm(f => ({ ...f, product_type: 'service' }))}
+                    className={`p-3 text-left border rounded-lg transition-all ${form.product_type === 'service' ? 'border-blue-600 bg-blue-50 font-semibold text-blue-700 ring-1 ring-blue-600' : 'border-input hover:bg-muted/50 text-muted-foreground'}`}
+                  >
+                    <div className="text-sm">Layanan / Jasa</div>
+                    <div className="text-[11px] font-normal opacity-80">Booking Meja/Room, Pre-Order, Jasa</div>
+                  </button>
+                </div>
+              </div>
+
+              {/* Service Config (only if product_type === 'service') */}
+              {form.product_type === 'service' && (
+                <div className="col-span-2 p-3.5 bg-blue-50/70 border border-blue-200 rounded-lg space-y-3">
+                  <p className="text-xs font-bold text-blue-900 uppercase tracking-wide">Pengaturan Layanan & Reservasi</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="col-span-2 sm:col-span-1">
+                      <label className="text-xs font-medium text-blue-950 mb-1 block">Sub-Tipe Layanan</label>
+                      <Select value={form.service_type || 'booking'} onValueChange={v => setForm(f => ({ ...f, service_type: v }))}>
+                        <SelectTrigger className="bg-white"><SelectValue placeholder="Pilih sub-tipe" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="booking">Booking / Reservasi (Meja, Ruang VIP, Tempat)</SelectItem>
+                          <SelectItem value="preorder">Pre-Order (Kue, Tumpeng, Catering)</SelectItem>
+                          <SelectItem value="service">Jasa / Layanan Lainnya (Barista Workshop, Acara)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="col-span-2 sm:col-span-1">
+                      <label className="text-xs font-medium text-blue-950 mb-1 block">Estimasi Durasi (Menit, Opsional)</label>
+                      <Input
+                        type="number"
+                        placeholder="Misal: 60, 120"
+                        className="bg-white"
+                        value={form.duration_minutes}
+                        onChange={e => setForm(f => ({ ...f, duration_minutes: e.target.value }))}
+                      />
+                    </div>
+                    <div className="col-span-2 sm:col-span-1">
+                      <label className="text-xs font-medium text-blue-950 mb-1 block">Min. Pemesanan (Hari Sebelumnya / Lead Time)</label>
+                      <Input
+                        type="number"
+                        placeholder="0 = Hari H, 1 = H-1, 2 = H-2"
+                        className="bg-white"
+                        value={form.lead_time_days}
+                        onChange={e => setForm(f => ({ ...f, lead_time_days: e.target.value }))}
+                      />
+                    </div>
+                    <div className="col-span-2 sm:col-span-1 flex items-center gap-2 pt-4">
+                      <input
+                        type="checkbox"
+                        id="requires_schedule"
+                        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        checked={form.requires_schedule}
+                        onChange={e => setForm(f => ({ ...f, requires_schedule: e.target.checked }))}
+                      />
+                      <label htmlFor="requires_schedule" className="text-xs font-medium text-blue-950 cursor-pointer">
+                        Wajibkan Jadwal (Tanggal & Jam) saat Pemesanan
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="col-span-2">
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                  {form.product_type === 'service' ? 'Nama Layanan / Jasa *' : 'Nama Produk *'}
+                </label>
                 <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} required />
               </div>
               <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">Harga Jual *</label>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                  {form.product_type === 'service' ? 'Tarif / Harga *' : 'Harga Jual *'}
+                </label>
                 <Input type="number" step="0.01" value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} required />
               </div>
               <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">Harga Modal</label>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Harga Modal / HPP</label>
                 <Input type="number" step="0.01" value={form.cost_price} onChange={e => setForm(f => ({ ...f, cost_price: e.target.value }))} />
               </div>
               <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">SKU</label>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Kode / SKU</label>
                 <Input value={form.sku} onChange={e => setForm(f => ({ ...f, sku: e.target.value }))} />
               </div>
               <div className="col-span-2">
@@ -357,7 +498,7 @@ export default function ProductsPage() {
                             image: prev.image || urls[0] || '',
                           }));
                         } catch (err) {
-                          alert(err.response?.data?.error || 'Gagal upload gambar');
+                          toast.error(err.response?.data?.error || 'Gagal upload gambar');
                         }
                         e.target.value = '';
                       }}

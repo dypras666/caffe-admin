@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/
 import { Input } from '../components/ui/input';
 import { ServerSelect } from '../components/ui/server-select';
 import { Loader2, RefreshCw, ChevronLeft, ChevronRight, Check, X, Plus, Banknote, Utensils, Trash2 } from 'lucide-react';
+import { useToast } from '../components/ui/toast';
 
 const STATUS_OPTIONS = ['all', 'pending', 'confirmed', 'cancelled', 'completed'];
 const STATUS_LABEL = { pending: 'Pending', confirmed: 'Dikonfirmasi', cancelled: 'Dibatalkan', completed: 'Selesai' };
@@ -17,6 +18,7 @@ const STATUS_CLS = { pending: 'badge-status-pending', confirmed: 'badge-status-r
 function formatDate(d) { return new Date(d).toLocaleDateString('id-ID', { dateStyle: 'medium' }); }
 
 export default function BookingsPage() {
+  const toast = useToast();
   const [status, setStatus] = useState('all');
   const [page, setPage] = useState(1);
   const [updatingId, setUpdatingId] = useState(null);
@@ -46,9 +48,10 @@ export default function BookingsPage() {
     setUpdatingId(id);
     try {
       await api.put(`/bookings/${id}`, { status: newStatus });
+      toast.success('Status booking diperbarui');
       refetch();
     } catch (err) {
-      alert(err.response?.data?.error || 'Gagal update');
+      toast.error(err.response?.data?.error || 'Gagal update status');
     } finally {
       setUpdatingId(null);
     }
@@ -59,11 +62,12 @@ export default function BookingsPage() {
     setSubmitting(true);
     try {
       await api.post('/bookings', form);
+      toast.success('Booking berhasil dibuat');
       setIsModalOpen(false);
       setForm({ name: '', email: '', phone: '', booking_date: '', booking_time: '', guests: 1, special_request: '', items: [] });
       refetch();
     } catch (err) {
-      alert(err.response?.data?.error || 'Gagal membuat booking');
+      toast.error(err.response?.data?.error || 'Gagal membuat booking');
     } finally {
       setSubmitting(false);
     }
@@ -94,7 +98,7 @@ export default function BookingsPage() {
       setBookingItems(res.data || []);
       setItemsModalOpen(true);
     } catch (e) {
-      alert('Gagal mengambil detail menu');
+      toast.error('Gagal mengambil detail menu');
     }
   };
 
@@ -113,10 +117,11 @@ export default function BookingsPage() {
     setSubmitting(true);
     try {
       await api.post(`/bookings/${selectedBooking.id}/payment`, paymentForm);
+      toast.success('Pembayaran booking berhasil disimpan');
       setPaymentModalOpen(false);
       refetch();
     } catch (err) {
-      alert(err.response?.data?.error || 'Gagal menyimpan pembayaran');
+      toast.error(err.response?.data?.error || 'Gagal menyimpan pembayaran');
     } finally {
       setSubmitting(false);
     }

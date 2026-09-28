@@ -30,10 +30,11 @@ function buildNavGroups(settings = {}) {
     icon: MonitorSmartphone,
     color: 'text-amber-600',
     items: [
-      { to: '/pos',         icon: MonitorSmartphone, label: 'POS Kasir',     roles: ['admin', 'kasir'] },
-      { to: '/waiter',      icon: UserCheck,         label: 'Waiter Order',  roles: ['admin', 'waiter'] },
-      { to: '/table-order', icon: UtensilsCrossed,   label: 'Table Order',   roles: ['admin', 'kasir', 'waiter'] },
-      { to: '/orders',      icon: ShoppingBag,       label: 'Pesanan',       roles: ['admin', 'kasir', 'waiter'] },
+      { to: '/pos',         icon: MonitorSmartphone, label: 'POS Kasir',            roles: ['admin', 'kasir'] },
+      { to: '/waiter',      icon: UserCheck,         label: 'Waiter Order',         roles: ['admin', 'waiter'] },
+      { to: '/table-order', icon: UtensilsCrossed,   label: 'Table Order',          roles: ['admin', 'kasir', 'waiter'] },
+      { to: '/orders',      icon: ShoppingBag,       label: 'Pesanan',              roles: ['admin', 'kasir', 'waiter'] },
+      { to: '/services',    icon: CalendarCheck,     label: 'Layanan & Pre-Order',  roles: ['admin', 'kasir', 'waiter'] },
     ],
   },
   {

@@ -15,12 +15,14 @@ import {
   Search, Plus, Minus, Trash2, ShoppingCart, CreditCard,
   Loader2, ChevronDown, Tag, X, Check, Coffee,
   Utensils, Receipt, Layers, User, UserPlus, Phone, Star, Wallet, QrCode, Clock, Building2, Gift, Sparkles, Ticket, TrendingUp, AlertTriangle,
-  Maximize, Minimize, Store, AlertCircle } from 'lucide-react';
+  Maximize, Minimize, Store, AlertCircle, CalendarCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 const ORDER_TYPES = [
-  { value: 'dine-in',  label: 'Dine-in',  icon: Utensils },
-  { value: 'takeaway', label: 'Takeaway',  icon: Coffee },
+  { value: 'dine-in',  label: 'Dine-in',    icon: Utensils },
+  { value: 'takeaway', label: 'Takeaway',   icon: Coffee },
+  { value: 'booking',  label: 'Booking',    icon: CalendarCheck },
+  { value: 'preorder', label: 'Pre-Order',  icon: Clock },
 ];
 
 const generateDynamicQris = (qris, amount) => {
@@ -97,6 +99,9 @@ export default function POSPage() {
   const [discount, setDiscount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('cash');
   const [editingOrder, setEditingOrder] = useState(null); // original order being edited
+  const [serviceDate, setServiceDate] = useState('');
+  const [serviceTime, setServiceTime] = useState('');
+  const [servicePersonCount, setServicePersonCount] = useState('');
 
   // UI state
   const [search, setSearch] = useState('');
@@ -115,21 +120,27 @@ export default function POSPage() {
   const [appliedVoucher, setAppliedVoucher] = useState(null);
 
   const { user: currentUser } = useAuth();
+  const [adminBranchId, setAdminBranchId] = useState('');
+  
+  const effectiveBranchId = currentUser?.branch_id || adminBranchId;
+  const isBranchSelected = !!effectiveBranchId;
 
   // Data
   const debouncedSearch = useDebounce(search, 350);
-  const branchQs = currentUser?.branch_id ? `&branch_id=${currentUser.branch_id}` : '';
-  const qs = `/products?limit=200${(activeCategory !== 'all' && activeCategory !== 'promo') ? `&category=${activeCategory}` : ''}${debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ''}${branchQs}`;
-  const { data: productsData, loading: loadingProducts } = useFetch(qs);
+  const branchQs = isBranchSelected ? `&branch_id=${effectiveBranchId}` : '';
+  const qs = `/products?limit=200${(activeCategory !== 'all' && activeCategory !== 'promo' && activeCategory !== 'services') ? `&category=${activeCategory}` : ''}${activeCategory === 'services' ? '&product_type=service' : ''}${debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ''}${branchQs}`;
+  
+  // Conditionally fetch data if branch is required but not selected
+  const { data: productsData, loading: loadingProducts } = useFetch(isBranchSelected ? qs : null);
   const { data: catData }      = useFetch('/categories');
   const { data: payData }      = useFetch('/payments/methods');
   const { data: settingsData } = useFetch('/settings');
   const { data: vouchersData } = useFetch('/vouchers?is_active=true');
-  const { data: tablesData, refetch: refetchTables } = useFetch('/tables');
+  const { data: tablesData, refetch: refetchTables } = useFetch(isBranchSelected ? `/tables${branchQs}` : null);
   const { data: branchesData } = useFetch('/branches');
-  const { data: currentShiftData, refetch: refetchShift } = useFetch('/shifts/current');
-  const currentBranch = currentUser?.branch_id
-    ? (branchesData?.branches || []).find(b => b.id === currentUser.branch_id)
+  const { data: currentShiftData, refetch: refetchShift } = useFetch(isBranchSelected ? `/shifts/current${branchQs}` : null);
+  const currentBranch = effectiveBranchId
+    ? (branchesData?.branches || []).find(b => b.id === Number(effectiveBranchId))
     : null;
   const currentShift = currentShiftData?.shift || null;
 
@@ -143,10 +154,16 @@ export default function POSPage() {
   }, [categories]);
 
   const promoProducts = useMemo(() => {
-    const activeVouchers = vouchersData?.vouchers || [];
+    const allVouchers = vouchersData?.vouchers || [];
     const promos = [];
+    const now = new Date();
     // 1) Add products from voucher-based item_discount
-    activeVouchers.filter(v => v.type === 'item_discount' && v.applicable_products?.length).forEach(v => {
+    allVouchers.filter(v => {
+      if (v.type !== 'item_discount' || !v.is_active || !v.applicable_products?.length) return false;
+      if (v.valid_from && new Date(v.valid_from) > now) return false;
+      if (v.valid_until && new Date(v.valid_until) < now) return false;
+      return true;
+    }).forEach(v => {
       let parsed = v.applicable_products;
       try { while (typeof parsed === 'string') { parsed = JSON.parse(parsed); } } catch(e) { parsed = []; }
       if (!Array.isArray(parsed)) parsed = [];
@@ -176,11 +193,16 @@ export default function POSPage() {
 
   const popularProducts = useMemo(() => products.filter(p => p.is_popular === 1), [products]);
 
-  // Auto-discount map: product_id -> { discount_type, discount_value, voucher_name, max_qty }
   const itemDiscountMap = useMemo(() => {
-    const activeVouchers = vouchersData?.vouchers || [];
+    const allVouchers = vouchersData?.vouchers || [];
     const map = {};
-    activeVouchers.filter(v => v.type === 'item_discount' && v.is_active).forEach(v => {
+    const now = new Date();
+    allVouchers.filter(v => {
+      if (v.type !== 'item_discount' || !v.is_active) return false;
+      if (v.valid_from && new Date(v.valid_from) > now) return false;
+      if (v.valid_until && new Date(v.valid_until) < now) return false;
+      return true;
+    }).forEach(v => {
       let parsed = v.applicable_products;
       try { while (typeof parsed === 'string') { parsed = JSON.parse(parsed); } } catch(e) { parsed = []; }
       if (!Array.isArray(parsed)) parsed = [];
@@ -289,6 +311,10 @@ export default function POSPage() {
   };
 
   const addItem = (product, variants = [], addons = []) => {
+    if (product.product_type === 'service') {
+      if (product.service_type === 'booking' && orderType !== 'booking') setOrderType('booking');
+      else if (product.service_type === 'preorder' && orderType !== 'preorder') setOrderType('preorder');
+    }
     const mod         = variants.reduce((s, v) => s + (v.price_modifier || 0), 0);
     const addonsUnit  = addons.reduce((s, a) => s + (a.unit_price || 0) * (a.qty || 1), 0);
     const unitPrice   = parseFloat(product.price) + mod;
@@ -298,7 +324,21 @@ export default function POSPage() {
     setCart(c => {
       const ex = c.find(i => i.cartKey === key);
       if (ex) return c.map(i => i.cartKey === key ? { ...i, qty: i.qty + 1 } : i);
-      return [...c, { cartKey: key, id: product.id, name, price: parseFloat(product.price), unitPrice, addonsPerUnit: addonsUnit, variants, addons, qty: 1, notes: '' }];
+      return [...c, {
+        cartKey: key,
+        id: product.id,
+        name,
+        price: parseFloat(product.price),
+        unitPrice,
+        addonsPerUnit: addonsUnit,
+        variants,
+        addons,
+        qty: 1,
+        notes: '',
+        product_type: product.product_type || 'product',
+        service_type: product.service_type || null,
+        requires_schedule: product.requires_schedule || false,
+      }];
     });
   };
 
@@ -353,6 +393,12 @@ export default function POSPage() {
             )}
           </div>
         )}
+        {product.product_type === 'service' && !promoLabel && (
+          <div className="absolute top-1 left-1 bg-violet-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm z-20">
+            {product.service_type === 'booking' ? 'Booking' : product.service_type === 'preorder' ? 'Pre-Order' : 'Layanan'}
+            {product.duration_minutes ? ` • ${product.duration_minutes}m` : ''}
+          </div>
+        )}
         {/* Cart badge */}
         {cartQty > 0 && (
           <span className="absolute top-1.5 right-1.5 w-5 h-5 bg-primary text-primary-foreground rounded-full text-[10px] font-bold flex items-center justify-center z-10 shadow-sm ring-2 ring-card pointer-events-none">
@@ -381,8 +427,12 @@ export default function POSPage() {
           <p className="text-xs font-semibold leading-snug line-clamp-2">{product.name}</p>
           <div className="mt-auto pt-1 flex items-center justify-between">
             <p className="text-xs font-bold text-primary">{fmt(product.price)}</p>
-            {product.stock > 0 && product.stock <= (product.min_stock || 0) && (
-              <span className="text-[9px] text-amber-600 font-bold bg-amber-50 px-1 py-0.5 rounded">Sisa {product.stock}</span>
+            {product.product_type === 'service' ? (
+              <span className="text-[9px] text-violet-600 font-semibold bg-violet-50 px-1 py-0.5 rounded">Jasa / Layanan</span>
+            ) : (
+              product.stock > 0 && product.stock <= (product.min_stock || 0) && (
+                <span className="text-[9px] text-amber-600 font-bold bg-amber-50 px-1 py-0.5 rounded">Sisa {product.stock}</span>
+              )
             )}
           </div>
         </div>
@@ -397,6 +447,7 @@ export default function POSPage() {
   const clearCart = () => {
     setCart([]); setCustomerName(''); setNotes(''); setDiscount('');
     setSelectedTable(null); setSelectedMember(null); setPointsPreview(null); setAppliedVoucher(null);
+    setServiceDate(''); setServiceTime(''); setServicePersonCount('');
   };
 
   const onMemberSelect = (member) => {
@@ -442,6 +493,7 @@ export default function POSPage() {
       } else {
         // ── Create mode: new order ────────────────────────────────
         const res = await api.post('/orders', {
+          branch_id: effectiveBranchId,
           customer_name: customerName || 'Umum',
           customer_email: selectedMember?.email || null,
           customer_phone: selectedMember?.phone || null,
@@ -449,13 +501,21 @@ export default function POSPage() {
           table_number: selectedTable?.table_number || null,
           table_id: selectedTable?.id || null,
           payment_method: paymentMethod,
+          payment_status: paymentDetails?.isDp && paymentDetails?.dpAmount > 0 ? 'partial' : paymentMethod === 'pending' ? 'pending' : 'paid',
+          dp_amount: paymentDetails?.isDp && paymentDetails?.dpAmount > 0 ? paymentDetails.dpAmount : undefined,
           cash_received: paymentMethod === 'cash' ? paymentDetails.cashReceived : null,
           change_amount: paymentMethod === 'cash' ? paymentDetails.changeAmount : null,
           notes: notes || null,
           discount: discountAmt || 0,
           voucher_code: appliedVoucher?.code || null,
+          service_date: serviceDate || null,
+          service_time: serviceTime || null,
+          service_person_count: servicePersonCount ? parseInt(servicePersonCount) : null,
+          service_status: (orderType === 'booking' || orderType === 'preorder' || cart.some(i => i.product_type === 'service')) ? 'pending' : null,
           items: cart.map(i => ({
             product_id: i.id, quantity: i.qty, notes: i.notes || null,
+            service_date: serviceDate || null,
+            service_time: serviceTime || null,
             variants: (i.variants || []).map(v => ({ group_id: v.group_id, option_id: v.option_id })),
             addons:   (i.addons  || []).map(a => ({ addon_id: a.addon_id, qty: a.qty })),
           })),
@@ -505,6 +565,29 @@ export default function POSPage() {
   // ── Render ────────────────────────────────────────────────────
   return (
     <div ref={posRef} className="flex flex-col lg:flex-row h-full overflow-hidden bg-muted/30">
+      
+      {/* Admin Branch Selection Enforcement */}
+      {currentUser?.role === 'admin' && !effectiveBranchId && (
+        <div className="absolute inset-0 z-50 bg-background/95 backdrop-blur-sm flex flex-col items-center justify-center p-4">
+          <div className="bg-card border rounded-2xl shadow-xl p-8 max-w-sm w-full text-center space-y-6">
+            <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
+              <Store className="w-8 h-8 text-primary" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold mb-2">Pilih Cabang Aktif</h2>
+              <p className="text-sm text-muted-foreground">Sebagai Owner/Admin, Anda wajib memilih sesi cabang sebelum menggunakan POS agar data penjualan dan stok tersimpan di cabang yang tepat.</p>
+            </div>
+            <Select value={adminBranchId || ''} onValueChange={setAdminBranchId}>
+              <SelectTrigger className="h-12"><SelectValue placeholder="Pilih Cabang..." /></SelectTrigger>
+              <SelectContent>
+                {(branchesData?.branches || []).map(b => (
+                  <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      )}
 
       {/* ── LEFT: Product area ───────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
@@ -576,7 +659,7 @@ export default function POSPage() {
 
           {/* Category pills */}
           <div className="flex gap-2 overflow-x-auto scrollbar-none pb-0.5">
-            {[{ id: 'all', name: 'Semua' }, { id: 'promo', name: 'Promo' }, ...categories.filter(c => c.is_active && c.slug !== 'promo')].map(cat => (
+            {[{ id: 'all', name: 'Semua' }, { id: 'promo', name: 'Promo' }, { id: 'services', name: '✨ Layanan / Jasa' }, ...categories.filter(c => c.is_active && c.slug !== 'promo')].map(cat => (
               <button
                 key={cat.id}
                 onClick={() => setActiveCategory(String(cat.id))}
@@ -684,6 +767,9 @@ export default function POSPage() {
           itemDiscountMap={itemDiscountMap}
           calcItemTotal={calcItemTotal}
           calcDiscountedPrice={calcDiscountedPrice}
+          serviceDate={serviceDate} setServiceDate={setServiceDate}
+          serviceTime={serviceTime} setServiceTime={setServiceTime}
+          servicePersonCount={servicePersonCount} setServicePersonCount={setServicePersonCount}
         />
       </div>
 
@@ -745,6 +831,9 @@ export default function POSPage() {
                   itemDiscountMap={itemDiscountMap}
                   calcItemTotal={calcItemTotal}
                   calcDiscountedPrice={calcDiscountedPrice}
+                  serviceDate={serviceDate} setServiceDate={setServiceDate}
+                  serviceTime={serviceTime} setServiceTime={setServiceTime}
+                  servicePersonCount={servicePersonCount} setServicePersonCount={setServicePersonCount}
                 />
               </div>
             </div>
@@ -811,6 +900,7 @@ function CartPanel({
   cart, orderType, setOrderType, selectedTable, setSelectedTable,
   customerName, setCustomerName, selectedMember, onMemberSelect,
   discount, setDiscount,
+  serviceDate, setServiceDate, serviceTime, setServiceTime, servicePersonCount, setServicePersonCount,
   requireTable, tables, subtotal, discountAmt, taxAmt, taxRate, total, totalItems,
   fmt, updateQty, onRemove, onNoteChange, onClear, onCheckout, onTablePicker,
   lastOrder, onClearLastOrder,
@@ -875,6 +965,52 @@ function CartPanel({
           setCustomerName={setCustomerName}
           fmt={fmt}
         />
+
+        {/* Service / Booking / Pre-Order Schedule fields */}
+        {(orderType === 'booking' || orderType === 'preorder' || cart.some(i => i.product_type === 'service')) && (
+          <div className="bg-primary/5 border border-primary/20 rounded-xl p-2.5 space-y-2 text-xs">
+            <div className="font-semibold text-primary flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <CalendarCheck className="w-3.5 h-3.5" />
+                Jadwal {orderType === 'booking' ? 'Booking' : orderType === 'preorder' ? 'Pre-Order' : 'Layanan'}
+              </span>
+              <span className="text-[10px] text-muted-foreground font-normal">Wajib diisi</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-[10px] text-muted-foreground block mb-0.5">Tanggal</label>
+                <Input
+                  type="date"
+                  value={serviceDate}
+                  onChange={e => setServiceDate(e.target.value)}
+                  className="h-8 text-xs bg-background"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-muted-foreground block mb-0.5">Jam</label>
+                <Input
+                  type="time"
+                  value={serviceTime}
+                  onChange={e => setServiceTime(e.target.value)}
+                  className="h-8 text-xs bg-background"
+                />
+              </div>
+            </div>
+            {orderType === 'booking' && (
+              <div>
+                <label className="text-[10px] text-muted-foreground block mb-0.5">Jumlah Orang / Tamu</label>
+                <Input
+                  type="number"
+                  min="1"
+                  placeholder="Contoh: 4"
+                  value={servicePersonCount}
+                  onChange={e => setServicePersonCount(e.target.value)}
+                  className="h-8 text-xs bg-background"
+                />
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Cart items list */}
@@ -1458,7 +1594,14 @@ function CartItem({ item, fmt, onQtyChange, onRemove, onNoteChange, voucherDisco
       )}
       <div className="flex items-start gap-2">
         <div className="flex-1 min-w-0">
-          <p className="text-xs font-semibold leading-snug">{item.name}</p>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <p className="text-xs font-semibold leading-snug">{item.name}</p>
+            {item.product_type === 'service' && (
+              <span className="text-[9px] font-bold px-1.5 py-0.2 bg-violet-100 text-violet-700 rounded border border-violet-200">
+                {item.service_type === 'booking' ? 'Booking' : item.service_type === 'preorder' ? 'Pre-Order' : 'Jasa'}
+              </span>
+            )}
+          </div>
           <div className="flex flex-col gap-0.5 mt-0.5">
             {/* Voucher breakdown */}
             {hasVoucher && discQty > 0 && (
@@ -1643,27 +1786,38 @@ function CheckoutDialog({
   orderType, selectedTable, customerName, selectedMember, qrisString, fmt, onConfirm, placing,
   appliedVoucher, onApplied, onRemove
 }) {
+  const isServiceOrder = orderType === 'booking' || orderType === 'preorder' || cart.some(i => i.product_type === 'service');
+  const [payType, setPayType] = useState('full'); // 'full' | 'dp'
+  const [dpVal, setDpVal] = useState('');
   const [step, setStep] = useState('form');
   const [kodeUnik, setKodeUnik] = useState(0);
   const [cashReceived, setCashReceived] = useState('');
   
-  const changeAmount = (parseInt(cashReceived.replace(/\D/g, '')) || 0) - total;
+  const effectiveDue = payType === 'dp' && parseFloat(dpVal) > 0 ? parseFloat(dpVal) : total;
+  const changeAmount = (parseInt(cashReceived.replace(/\D/g, '')) || 0) - effectiveDue;
   
-  // Fetch unique code when dialog opens
+  // Fetch unique code & initialize DP when dialog opens
   useEffect(() => {
     if (open) {
       setStep('form');
+      if (isServiceOrder) {
+        setPayType('dp');
+        setDpVal(String(Math.round(total * 0.3)));
+      } else {
+        setPayType('full');
+        setDpVal('');
+      }
       import('../lib/api').then(({ default: api }) => {
         api.get('/orders/qris/unique-code')
           .then(res => setKodeUnik(res.data.kode_unik))
           .catch(() => setKodeUnik(Math.floor(Math.random() * 900) + 100)); // Fallback if error
       });
     }
-  }, [open]);
+  }, [open, total, isServiceOrder]);
 
   const ICONS = { cash: '💵', digital: '📱', transfer: '🏦', wallet: '👛' };
   const isPendingPay = paymentMethod === 'pending';
-  const qrisTotal = total + (paymentMethod === 'qris' ? kodeUnik : 0);
+  const qrisTotal = effectiveDue + (paymentMethod === 'qris' ? kodeUnik : 0);
   const dynamicQris = paymentMethod === 'qris' && qrisString ? generateDynamicQris(qrisString, qrisTotal) : null;
 
   return (
@@ -1715,7 +1869,7 @@ function CheckoutDialog({
                   <Receipt className="w-4 h-4 mr-2" /> Print QRIS
                 </Button>
               )}
-              <Button className="flex-1" onClick={() => onConfirm(true, true)} disabled={placing}>
+              <Button className="flex-1" onClick={() => onConfirm(true, true, { dpAmount: payType === 'dp' ? parseFloat(dpVal) : null, isDp: payType === 'dp' && parseFloat(dpVal) > 0 })} disabled={placing}>
                 {placing ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Utensils className="w-4 h-4 mr-2" />}
                 Sudah Dibayar
               </Button>
@@ -1740,6 +1894,74 @@ function CheckoutDialog({
                 <span>Total</span>
                 <span className="text-primary">{fmt(total)}</span>
               </div>
+            </div>
+
+            {/* Opsi DP / Uang Muka */}
+            <div className="bg-primary/5 rounded-xl p-3 border border-primary/20 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-foreground">Sistem Pembayaran</span>
+                <div className="flex rounded-lg bg-background p-0.5 border">
+                  <button
+                    type="button"
+                    onClick={() => setPayType('full')}
+                    className={cn(
+                      'px-2.5 py-1 text-xs font-semibold rounded-md transition-all',
+                      payType === 'full' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    Bayar Penuh
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPayType('dp');
+                      if (!dpVal) setDpVal(String(Math.round(total * 0.3)));
+                    }}
+                    className={cn(
+                      'px-2.5 py-1 text-xs font-semibold rounded-md transition-all',
+                      payType === 'dp' ? 'bg-amber-600 text-white shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    Uang Muka (DP)
+                  </button>
+                </div>
+              </div>
+
+              {payType === 'dp' && (
+                <div className="space-y-2 pt-1 border-t border-primary/10">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">Nominal DP:</span>
+                    <div className="flex gap-1">
+                      {[0.2, 0.3, 0.5].map(pct => (
+                        <button
+                          key={pct}
+                          type="button"
+                          onClick={() => setDpVal(String(Math.round(total * pct)))}
+                          className="px-2 py-0.5 text-[10px] font-bold rounded bg-background border hover:bg-muted"
+                        >
+                          {Math.round(pct * 100)}%
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-muted-foreground">Rp</span>
+                    <Input
+                      type="number"
+                      value={dpVal}
+                      onChange={e => setDpVal(e.target.value)}
+                      placeholder="Contoh: 50000"
+                      className="pl-9 h-8 text-xs font-bold"
+                    />
+                  </div>
+                  <div className="flex justify-between text-[11px] text-muted-foreground pt-0.5">
+                    <span>Sisa Pelunasan Nanti:</span>
+                    <span className="font-bold text-amber-700">
+                      {fmt(Math.max(0, total - (parseFloat(dpVal) || 0)))}
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
             
             {/* Voucher Input dipindahkan ke dalam modal (kiri bawah) */}
@@ -1852,7 +2074,7 @@ function CheckoutDialog({
             {/* Actions */}
             <div className="grid grid-cols-3 gap-2 pt-2 border-t mt-2">
               <Button variant="outline" onClick={onClose} disabled={placing} className="h-11">Batal</Button>
-              <Button variant="outline" onClick={() => onConfirm(false, true, { cashReceived: parseInt(cashReceived.replace(/\D/g, '')) || 0, changeAmount: Math.max(0, changeAmount) })} disabled={placing} className="h-11 gap-1 text-xs px-1">
+              <Button variant="outline" onClick={() => onConfirm(false, true, { cashReceived: parseInt(cashReceived.replace(/\D/g, '')) || 0, changeAmount: Math.max(0, changeAmount), dpAmount: payType === 'dp' ? parseFloat(dpVal) : null, isDp: payType === 'dp' && parseFloat(dpVal) > 0 })} disabled={placing} className="h-11 gap-1 text-xs px-1">
                 {placing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Utensils className="w-3.5 h-3.5" />}
                 Dapur
               </Button>
@@ -1861,14 +2083,14 @@ function CheckoutDialog({
                   if (paymentMethod === 'qris') {
                     setStep('qris');
                   } else {
-                    onConfirm(!isPendingPay, true, { cashReceived: parseInt(cashReceived.replace(/\D/g, '')) || 0, changeAmount: Math.max(0, changeAmount) });
+                    onConfirm(!isPendingPay, true, { cashReceived: parseInt(cashReceived.replace(/\D/g, '')) || 0, changeAmount: Math.max(0, changeAmount), dpAmount: payType === 'dp' ? parseFloat(dpVal) : null, isDp: payType === 'dp' && parseFloat(dpVal) > 0 });
                   }
                 }}
                 disabled={placing || (paymentMethod === 'cash' && changeAmount < 0)}
-                className={cn('h-11 gap-1 text-xs font-semibold', isPendingPay && 'bg-amber-500 hover:bg-amber-600')}
+                className={cn('h-11 gap-1 text-xs font-semibold', isPendingPay && 'bg-amber-500 hover:bg-amber-600', payType === 'dp' && !isPendingPay && 'bg-amber-600 hover:bg-amber-700')}
               >
                 {placing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : isPendingPay ? <Clock className="w-3.5 h-3.5" /> : <Receipt className="w-3.5 h-3.5" />}
-                {paymentMethod === 'qris' ? 'Lanjut QRIS' : (isPendingPay ? 'Simpan' : 'Bayar')}
+                {paymentMethod === 'qris' ? 'Lanjut QRIS' : (isPendingPay ? 'Simpan' : payType === 'dp' ? `Bayar DP (${fmt(effectiveDue)})` : 'Bayar')}
               </Button>
             </div>
           </div>

@@ -11,6 +11,7 @@ import OrdersPage from './pages/OrdersPage';
 import ProductsPage from './pages/ProductsPage';
 import CategoriesPage from './pages/CategoriesPage';
 import BookingsPage from './pages/BookingsPage';
+import ServicesPage from './pages/ServicesPage';
 import MediaPage from './pages/MediaPage';
 import UsersPage from './pages/UsersPage';
 import SettingsPage from './pages/SettingsPage';
@@ -79,6 +80,7 @@ function AppRoutes() {
         <Route path="products" element={<RequireRole roles={['station']}><ProductsPage /></RequireRole>} />
         <Route path="categories" element={<RequireRole roles={['station']}><CategoriesPage /></RequireRole>} />
         <Route path="bookings" element={<RequireAdmin><BookingsPage /></RequireAdmin>} />
+        <Route path="services" element={<ServicesPage />} />
         <Route path="media" element={<RequireAdmin><MediaPage /></RequireAdmin>} />
         <Route path="rooms" element={<RequireAdmin><RoomsPage /></RequireAdmin>} />
         <Route path="tables" element={<RequireAdmin><TablesPage /></RequireAdmin>} />

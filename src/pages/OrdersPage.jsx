@@ -225,6 +225,8 @@ export function OrderDetailPanel({ orderId, onClose, onStatusUpdated, autoOpenPa
   // Payment dialog
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [payMethod, setPayMethod] = useState('cash');
+  const [settleAmount, setSettleAmount] = useState('');
+  const [settleNotes, setSettleNotes] = useState('');
 
   const loadDetail = useCallback(async () => {
     if (!orderId) return;
@@ -246,6 +248,8 @@ export function OrderDetailPanel({ orderId, onClose, onStatusUpdated, autoOpenPa
 
   useEffect(() => {
     if (autoOpenPayment && detail && detail.payment_status !== 'paid') {
+      const rem = Number(detail.remaining_amount != null ? detail.remaining_amount : (detail.total - (detail.paid_amount || 0)));
+      setSettleAmount(String(rem > 0 ? rem : detail.total));
       setPaymentDialogOpen(true);
     }
   }, [autoOpenPayment, detail]);
@@ -273,7 +277,18 @@ export function OrderDetailPanel({ orderId, onClose, onStatusUpdated, autoOpenPa
   const handlePayment = async () => {
     setUpdatingId(orderId);
     try {
-      await api.put(`/orders/${orderId}/payment`, { payment_status: 'paid', payment_method: payMethod });
+      if (detail?.payment_status === 'partial') {
+        const amt = parseFloat(settleAmount) || (detail.remaining_amount || (detail.total - (detail.paid_amount || 0)));
+        await api.post(`/orders/${orderId}/settle`, {
+          amount: amt,
+          payment_method: payMethod,
+          notes: settleNotes || undefined,
+        });
+        toast.success('Pelunasan berhasil diproses');
+      } else {
+        await api.put(`/orders/${orderId}/payment`, { payment_status: 'paid', payment_method: payMethod });
+        toast.success('Pembayaran berhasil diproses');
+      }
       setPaymentDialogOpen(false);
       await loadDetail();
       onStatusUpdated();
@@ -476,7 +491,9 @@ export function OrderDetailPanel({ orderId, onClose, onStatusUpdated, autoOpenPa
       <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Proses Pembayaran</DialogTitle>
+            <DialogTitle>
+              {detail?.payment_status === 'partial' ? 'Pelunasan Pesanan' : 'Proses Pembayaran'}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-2">
             <div className="space-y-2">
@@ -494,15 +511,47 @@ export function OrderDetailPanel({ orderId, onClose, onStatusUpdated, autoOpenPa
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex justify-between items-center bg-muted/30 p-3 rounded-lg border">
-              <span className="text-sm text-muted-foreground">Total Tagihan</span>
-              <span className="font-bold text-lg">{formatRp(detail?.total)}</span>
+
+            <div className="bg-muted/30 p-3 rounded-lg border space-y-1 text-xs">
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Total Pesanan</span>
+                <span className="font-semibold text-sm">{formatRp(detail?.total)}</span>
+              </div>
+              {detail?.payment_status === 'partial' && (
+                <>
+                  <div className="flex justify-between items-center text-blue-700">
+                    <span>Sudah Dibayar (DP)</span>
+                    <span className="font-bold">{formatRp(detail?.paid_amount || detail?.dp_amount || 0)}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-amber-700 font-bold border-t pt-1">
+                    <span>Sisa Tagihan</span>
+                    <span>{formatRp(detail?.remaining_amount != null ? detail.remaining_amount : (detail?.total - (detail?.paid_amount || 0)))}</span>
+                  </div>
+                </>
+              )}
             </div>
+
+            {detail?.payment_status === 'partial' && (
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold">Nominal Pelunasan</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-muted-foreground">Rp</span>
+                  <Input
+                    type="number"
+                    value={settleAmount}
+                    onChange={e => setSettleAmount(e.target.value)}
+                    className="pl-9 font-bold h-9 text-xs"
+                    placeholder="Nominal pelunasan"
+                  />
+                </div>
+              </div>
+            )}
+
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="outline" size="sm" onClick={() => setPaymentDialogOpen(false)}>Batal</Button>
               <Button size="sm" onClick={handlePayment} disabled={!!updatingId} className="bg-green-600 hover:bg-green-700">
                 {updatingId ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null}
-                Konfirmasi Lunas
+                {detail?.payment_status === 'partial' ? 'Konfirmasi Pelunasan' : 'Konfirmasi Lunas'}
               </Button>
             </div>
           </div>
@@ -780,6 +829,34 @@ export function OrderDetailPanel({ orderId, onClose, onStatusUpdated, autoOpenPa
                   <span>Total</span>
                   <span>{formatRp(detail.total)}</span>
                 </div>
+
+                {detail.payment_status === 'partial' && (
+                  <div className="bg-blue-50/70 border border-blue-200 rounded-lg p-2.5 mt-2 space-y-1 text-xs">
+                    <div className="flex justify-between text-blue-900">
+                      <span>Sudah Dibayar (DP):</span>
+                      <span className="font-bold">{formatRp(detail.paid_amount || detail.dp_amount)}</span>
+                    </div>
+                    <div className="flex justify-between text-amber-800 font-bold border-t border-blue-200/60 pt-1">
+                      <span>Sisa Pelunasan:</span>
+                      <span>{formatRp(detail.remaining_amount != null ? detail.remaining_amount : (detail.total - (detail.paid_amount || 0)))}</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* History pembayaran jika ada */}
+                {detail.payments && detail.payments.length > 0 && (
+                  <div className="mt-2 pt-2 border-t text-[11px] space-y-1">
+                    <span className="font-semibold text-muted-foreground block">Riwayat Pembayaran:</span>
+                    {detail.payments.map((p, idx) => (
+                      <div key={p.id || idx} className="flex justify-between text-muted-foreground bg-muted/40 px-2 py-1 rounded">
+                        <span>
+                          <strong className="uppercase text-foreground">{p.payment_type}</strong> ({p.payment_method})
+                        </span>
+                        <span className="font-bold text-foreground">{formatRp(p.amount)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Print buttons */}
@@ -804,9 +881,13 @@ export function OrderDetailPanel({ orderId, onClose, onStatusUpdated, autoOpenPa
 
               {/* Payment button */}
               {detail.payment_status !== 'paid' && (
-                <Button variant="default" size="sm" className="w-full gap-1.5 text-xs bg-green-600 hover:bg-green-700"
-                  onClick={() => setPaymentDialogOpen(true)}>
-                  <Wallet className="w-3.5 h-3.5" /> Bayar Pesanan
+                <Button variant="default" size="sm" className={`w-full gap-1.5 text-xs ${detail.payment_status === 'partial' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'}`}
+                  onClick={() => {
+                    const rem = Number(detail.remaining_amount != null ? detail.remaining_amount : (detail.total - (detail.paid_amount || 0)));
+                    setSettleAmount(String(rem > 0 ? rem : detail.total));
+                    setPaymentDialogOpen(true);
+                  }}>
+                  <Wallet className="w-3.5 h-3.5" /> {detail.payment_status === 'partial' ? 'Pelunasan Pesanan' : 'Bayar Pesanan'}
                 </Button>
               )}
 
@@ -1128,13 +1209,20 @@ export default function OrdersPage() {
                     <TableCell className="text-xs text-muted-foreground">{order.branch_name || '—'}</TableCell>
                     <TableCell className="font-semibold">{formatRp(order.total)}</TableCell>
                     <TableCell>
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                        order.payment_status === 'paid' ? 'bg-green-100 text-green-800' :
-                        order.payment_status === 'partial' ? 'bg-blue-100 text-blue-800' :
-                        'bg-gray-100 text-gray-600'
-                      }`}>
-                        {order.payment_status === 'paid' ? 'Lunas' : order.payment_status === 'partial' ? 'Sebagian' : 'Belum Bayar'}
-                      </span>
+                      <div className="space-y-0.5">
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full inline-block ${
+                          order.payment_status === 'paid' ? 'bg-green-100 text-green-800' :
+                          order.payment_status === 'partial' ? 'bg-blue-100 text-blue-800 font-semibold' :
+                          'bg-gray-100 text-gray-600'
+                        }`}>
+                          {order.payment_status === 'paid' ? 'Lunas' : order.payment_status === 'partial' ? 'DP (Sebagian)' : 'Belum Bayar'}
+                        </span>
+                        {order.payment_status === 'partial' && (
+                          <p className="text-[10px] text-amber-700 font-bold whitespace-nowrap">
+                            Sisa: {formatRp(order.remaining_amount != null ? order.remaining_amount : (order.total - (order.paid_amount || 0)))}
+                          </p>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>
                       <span className={STATUS_CLS[order.order_status]}>{STATUS_LABEL[order.order_status]}</span>
@@ -1163,13 +1251,13 @@ export default function OrdersPage() {
                           <Button
                             size="sm"
                             variant="default"
-                            className="text-xs h-7 px-2 bg-green-600 hover:bg-green-700"
+                            className={`text-xs h-7 px-2 ${order.payment_status === 'partial' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'}`}
                             onClick={() => {
                               setOpenPaymentForId(order.id);
                               setSelectedOrderId(order.id);
                             }}
                           >
-                            Bayar
+                            {order.payment_status === 'partial' ? 'Pelunasan' : 'Bayar'}
                           </Button>
                         )}
                         {canUpdateStatus && NEXT_STATUS[order.order_status] && (
