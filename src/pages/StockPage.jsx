@@ -18,11 +18,10 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { ServerSelect } from '../components/ui/server-select';
 
-// ─── Branch scope context ────────────────────────────
-const BranchScopeContext = createContext(null);
+import { useGlobalBranch } from '../context/BranchContext';
 
 function useBranchScope() {
-  return useContext(BranchScopeContext);
+  return useGlobalBranch();
 }
 
 function BranchSelect({ branchId, onChange }) {
@@ -55,49 +54,40 @@ const MOVE_TYPE = {
 };
 
 export default function StockPage() {
-  const { user } = useAuth();
-  const isAdmin = user?.role === 'admin';
+  const { branchId, setBranchId, isAdmin } = useBranchScope();
   const [activeTab, setActiveTab] = useState('summary');
   const [visited, setVisited] = useState(new Set(['summary']));
-  const [branchId, setBranchId] = useState(isAdmin ? '' : String(user?.branch_id || ''));
   const { data: branchesData } = useFetch('/branches');
-
-  useEffect(() => {
-    if (!isAdmin && user?.branch_id) setBranchId(String(user.branch_id));
-  }, [isAdmin, user?.branch_id]);
 
   const handleTabChange = (val) => {
     setActiveTab(val);
     setVisited(prev => new Set([...prev, val]));
   };
 
-  const branchScopeValue = { branchId, setBranchId, isAdmin };
-
   return (
-    <BranchScopeContext.Provider value={branchScopeValue}>
-      <div className="space-y-5 relative">
-        {/* Admin Branch Selection Enforcement */}
-        {isAdmin && !branchId && (
-          <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-sm flex flex-col items-center justify-center p-4">
-            <div className="bg-card border rounded-2xl shadow-xl p-8 max-w-sm w-full text-center space-y-6">
-              <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
-                <Store className="w-8 h-8 text-primary" />
-              </div>
-              <div>
-                <h2 className="text-xl font-bold mb-2">Pilih Cabang Aktif</h2>
-                <p className="text-sm text-muted-foreground">Sebagai Owner/Admin, Anda wajib memilih sesi cabang sebelum mengelola stok dan inventori.</p>
-              </div>
-              <Select value={branchId || ''} onValueChange={setBranchId}>
-                <SelectTrigger className="h-12"><SelectValue placeholder="Pilih Cabang..." /></SelectTrigger>
-                <SelectContent>
-                  {(branchesData?.branches || []).map(b => (
-                    <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+    <div className="space-y-5 relative">
+      {/* Admin Branch Selection Enforcement */}
+      {isAdmin && (!branchId || branchId === 'all') && (
+        <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-sm flex flex-col items-center justify-center p-4">
+          <div className="bg-card border rounded-2xl shadow-xl p-8 max-w-sm w-full text-center space-y-6">
+            <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
+              <Store className="w-8 h-8 text-primary" />
             </div>
+            <div>
+              <h2 className="text-xl font-bold mb-2">Pilih Cabang Aktif</h2>
+              <p className="text-sm text-muted-foreground">Sebagai Owner/Admin, Anda wajib memilih sesi cabang sebelum mengelola stok dan inventori.</p>
+            </div>
+            <Select value={branchId || ''} onValueChange={setBranchId}>
+              <SelectTrigger className="h-12"><SelectValue placeholder="Pilih Cabang..." /></SelectTrigger>
+              <SelectContent>
+                {(branchesData?.branches || []).map(b => (
+                  <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-        )}
+        </div>
+      )}
       <Tabs value={activeTab} onValueChange={handleTabChange}>
         <TabsList className="flex-wrap h-auto gap-1">
           <TabsTrigger value="summary">Ringkasan</TabsTrigger>
@@ -127,7 +117,7 @@ export default function StockPage() {
         </TabsContent>
       </Tabs>
     </div>
-    </BranchScopeContext.Provider>
+    
   );
 }
 

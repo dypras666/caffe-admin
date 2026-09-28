@@ -45,19 +45,10 @@ const startOfMonth = () => {
 const PIE_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#14b8a6', '#f97316'];
 
 /* ─── shared components ───────────────────────────────────────────────────── */
-function BranchCashierFilter({ branchId, cashierId, onBranch, onCashier, showCashier = true }) {
+function BranchCashierFilter({ cashierId, onCashier, showCashier = true }) {
+  const { branchId } = useGlobalBranch();
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
-  const { data: branchData } = useFetch(isAdmin ? '/branches' : null);
-  const branches = branchData?.branches || [];
-
-  // Kasir: locked to own branch — notify parent once on mount
-  useEffect(() => {
-    if (!isAdmin && user?.branch_id) {
-      onBranch(String(user.branch_id));
-    }
-  }, [isAdmin, user?.branch_id]); // eslint-disable-line react-hooks/exhaustive-deps
-
   const { data: usersData } = useFetch(
     showCashier && isAdmin
       ? `/users?role=kasir&status=active${branchId && branchId !== 'all' ? `&branch_id=${branchId}` : ''}`
@@ -70,13 +61,7 @@ function BranchCashierFilter({ branchId, cashierId, onBranch, onCashier, showCas
 
   return (
     <>
-      <Select value={branchId} onValueChange={(v) => { onBranch(v); if (showCashier) onCashier('all'); }}>
-        <SelectTrigger className="w-36 h-8 text-xs"><SelectValue placeholder="Semua Cabang" /></SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">Semua Cabang</SelectItem>
-          {branches.map((b) => <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>)}
-        </SelectContent>
-      </Select>
+      
       {showCashier && (
         <Select value={cashierId} onValueChange={onCashier}>
           <SelectTrigger className="w-36 h-8 text-xs"><SelectValue placeholder="Semua Kasir" /></SelectTrigger>
@@ -144,7 +129,7 @@ function LoadingCenter() {
 function TabRingkasan() {
   const [from, setFrom] = useState(() => daysAgo(6));
   const [to, setTo] = useState(todayStr);
-  const [branchId, setBranchId] = useState('all');
+  const { branchId } = useGlobalBranch();
   const [cashierId, setCashierId] = useState('all');
 
   const qs = new URLSearchParams({ date_from: from, date_to: to });
@@ -166,7 +151,7 @@ function TabRingkasan() {
     <div className="space-y-5">
       <div className="flex flex-nowrap overflow-x-auto hide-scrollbar items-center gap-2 pb-1">
         <DateRangePicker from={from} to={to} onFrom={setFrom} onTo={setTo} />
-        <BranchCashierFilter branchId={branchId} cashierId={cashierId} onBranch={setBranchId} onCashier={setCashierId} />
+        <BranchCashierFilter cashierId={cashierId} onCashier={setCashierId} />
         <Button size="sm" variant="outline" onClick={refetch} className="gap-1.5 h-8 text-xs">
           <RefreshCw className="w-3.5 h-3.5" /> Refresh
         </Button>
@@ -253,7 +238,7 @@ function TabPerProduk() {
   const [to, setTo] = useState(todayStr);
   const [sortBy, setSortBy] = useState('qty');
   const [filterCat, setFilterCat] = useState('all');
-  const [branchId, setBranchId] = useState('all');
+  const { branchId } = useGlobalBranch();
   const [cashierId, setCashierId] = useState('all');
 
   const qs = new URLSearchParams({ date_from: from, date_to: to, limit: '50' });
@@ -289,7 +274,7 @@ function TabPerProduk() {
     <div className="space-y-5">
       <div className="flex flex-nowrap overflow-x-auto hide-scrollbar items-center gap-2 pb-1">
         <DateRangePicker from={from} to={to} onFrom={setFrom} onTo={setTo} />
-        <BranchCashierFilter branchId={branchId} cashierId={cashierId} onBranch={(v) => { setBranchId(v); setCashierId('all'); }} onCashier={setCashierId} />
+        <BranchCashierFilter cashierId={cashierId} onCashier={setCashierId} />
         <Select value={filterCat} onValueChange={setFilterCat}>
           <SelectTrigger className="w-36 h-8 text-xs"><SelectValue placeholder="Kategori" /></SelectTrigger>
           <SelectContent>
@@ -376,7 +361,7 @@ function TabPerProduk() {
 function TabPerJam() {
   const [from, setFrom] = useState(todayStr);
   const [to, setTo] = useState(todayStr);
-  const [branchId, setBranchId] = useState('all');
+  const { branchId } = useGlobalBranch();
   const [cashierId, setCashierId] = useState('all');
 
   const qs = new URLSearchParams({ date_from: from, date_to: to });
@@ -409,7 +394,7 @@ function TabPerJam() {
     <div className="space-y-5">
       <div className="flex flex-nowrap overflow-x-auto hide-scrollbar items-center gap-2 pb-1">
         <DateRangePicker from={from} to={to} onFrom={setFrom} onTo={setTo} />
-        <BranchCashierFilter branchId={branchId} cashierId={cashierId} onBranch={(v) => { setBranchId(v); setCashierId('all'); }} onCashier={setCashierId} />
+        <BranchCashierFilter cashierId={cashierId} onCashier={setCashierId} />
         <Button size="sm" variant="outline" onClick={refetch} className="gap-1.5 h-8 text-xs">
           <RefreshCw className="w-3.5 h-3.5" /> Refresh
         </Button>
@@ -520,7 +505,7 @@ function heatLevel(orders, max) {
 function TabPerMeja() {
   const [from, setFrom] = useState(() => daysAgo(29));
   const [to, setTo] = useState(todayStr);
-  const [branchId, setBranchId] = useState('all');
+  const { branchId } = useGlobalBranch();
   const [cashierId, setCashierId] = useState('all');
 
   const qs = new URLSearchParams({ date_from: from, date_to: to });
@@ -535,7 +520,7 @@ function TabPerMeja() {
     <div className="space-y-5">
       <div className="flex flex-nowrap overflow-x-auto hide-scrollbar items-center gap-2 pb-1">
         <DateRangePicker from={from} to={to} onFrom={setFrom} onTo={setTo} />
-        <BranchCashierFilter branchId={branchId} cashierId={cashierId} onBranch={(v) => { setBranchId(v); setCashierId('all'); }} onCashier={setCashierId} />
+        <BranchCashierFilter cashierId={cashierId} onCashier={setCashierId} />
         <Button size="sm" variant="outline" onClick={refetch} className="gap-1.5 h-8 text-xs">
           <RefreshCw className="w-3.5 h-3.5" /> Refresh
         </Button>
@@ -618,7 +603,7 @@ function TabPerMeja() {
 function TabPerStaff() {
   const [from, setFrom] = useState(() => daysAgo(29));
   const [to, setTo] = useState(todayStr);
-  const [branchId, setBranchId] = useState('all');
+  const { branchId } = useGlobalBranch();
   const [cashierId, setCashierId] = useState('all');
 
   const qs = new URLSearchParams({ date_from: from, date_to: to });
@@ -671,7 +656,7 @@ function TabPerStaff() {
     <div className="space-y-5">
       <div className="flex flex-nowrap overflow-x-auto hide-scrollbar items-center gap-2 pb-1">
         <DateRangePicker from={from} to={to} onFrom={setFrom} onTo={setTo} />
-        <BranchCashierFilter branchId={branchId} cashierId={cashierId} onBranch={(v) => { setBranchId(v); setCashierId('all'); }} onCashier={setCashierId} showCashier={true} />
+        <BranchCashierFilter cashierId={cashierId} onCashier={setCashierId} showCashier={true} />
         <Button size="sm" variant="outline" onClick={refetch} className="gap-1.5 h-8 text-xs shrink-0">
           <RefreshCw className="w-3.5 h-3.5" /> Refresh
         </Button>
@@ -727,7 +712,7 @@ function TabPerStaff() {
 function TabPerShift() {
   const [from, setFrom] = useState(() => daysAgo(29));
   const [to, setTo] = useState(todayStr);
-  const [branchId, setBranchId] = useState('all');
+  const { branchId } = useGlobalBranch();
 
   const qs = new URLSearchParams({ date_from: from, date_to: to });
   if (branchId !== 'all') qs.set('branch_id', branchId);
@@ -739,7 +724,7 @@ function TabPerShift() {
     <div className="space-y-5">
       <div className="flex flex-nowrap overflow-x-auto hide-scrollbar items-center gap-2 pb-1">
         <DateRangePicker from={from} to={to} onFrom={setFrom} onTo={setTo} />
-        <BranchCashierFilter branchId={branchId} cashierId="all" onBranch={setBranchId} onCashier={() => { }} showCashier={false} />
+        <BranchCashierFilter cashierId="all" onCashier={() => { }} showCashier={false} />
         <Button size="sm" variant="outline" onClick={refetch} className="gap-1.5 h-8 text-xs">
           <RefreshCw className="w-3.5 h-3.5" /> Refresh
         </Button>
@@ -800,7 +785,7 @@ function TabPerShift() {
 function TabPerPembayaran() {
   const [from, setFrom] = useState(() => daysAgo(29));
   const [to, setTo] = useState(todayStr);
-  const [branchId, setBranchId] = useState('all');
+  const { branchId } = useGlobalBranch();
   const [cashierId, setCashierId] = useState('all');
   const [selectedMethod, setSelectedMethod] = useState(null);
 
@@ -821,7 +806,7 @@ function TabPerPembayaran() {
     <div className="space-y-5">
       <div className="flex flex-nowrap overflow-x-auto hide-scrollbar items-center gap-2 pb-1">
         <DateRangePicker from={from} to={to} onFrom={setFrom} onTo={setTo} />
-        <BranchCashierFilter branchId={branchId} cashierId={cashierId} onBranch={(v) => { setBranchId(v); setCashierId('all'); }} onCashier={setCashierId} />
+        <BranchCashierFilter cashierId={cashierId} onCashier={setCashierId} />
         <Button size="sm" variant="outline" onClick={refetch} className="gap-1.5 h-8 text-xs">
           <RefreshCw className="w-3.5 h-3.5" /> Refresh
         </Button>
@@ -877,7 +862,6 @@ function TabPerPembayaran() {
           method={selectedMethod}
           from={from}
           to={to}
-          branchId={branchId}
           cashierId={cashierId}
           onClose={() => setSelectedMethod(null)}
         />
@@ -886,7 +870,8 @@ function TabPerPembayaran() {
   );
 }
 
-function PaymentTransactionsDialog({ method, from, to, branchId, cashierId, onClose }) {
+function PaymentTransactionsDialog({ method, from, to, cashierId, onClose }) {
+  const { branchId } = useGlobalBranch();
   const qs = new URLSearchParams({ date_from: from, date_to: to, limit: '500' });
   if (branchId !== 'all') qs.set('branch_id', branchId);
   if (cashierId !== 'all') qs.set('cashier_id', cashierId);
@@ -1000,7 +985,7 @@ function PaymentTransactionsDialog({ method, from, to, branchId, cashierId, onCl
 function TabTransaksi() {
   const [from, setFrom] = useState(() => daysAgo(0));
   const [to, setTo] = useState(todayStr);
-  const [branchId, setBranchId] = useState('all');
+  const { branchId } = useGlobalBranch();
   const [cashierId, setCashierId] = useState('all');
 
   const qs = new URLSearchParams({ date_from: from, date_to: to, limit: '500' });
@@ -1055,7 +1040,7 @@ function TabTransaksi() {
     <div className="space-y-5">
       <div className="flex flex-nowrap overflow-x-auto hide-scrollbar items-center gap-2 pb-1">
         <DateRangePicker from={from} to={to} onFrom={setFrom} onTo={setTo} />
-        <BranchCashierFilter branchId={branchId} cashierId={cashierId} onBranch={(v) => { setBranchId(v); setCashierId('all'); }} onCashier={setCashierId} />
+        <BranchCashierFilter cashierId={cashierId} onCashier={setCashierId} />
         <Button size="sm" variant="outline" onClick={refetch} className="gap-1.5 h-8 text-xs">
           <RefreshCw className="w-3.5 h-3.5" /> Refresh
         </Button>
@@ -1136,7 +1121,7 @@ const STATUS_COLORS = {
 function TabLayanan() {
   const [from, setFrom] = useState(() => daysAgo(29));
   const [to, setTo] = useState(todayStr);
-  const [branchId, setBranchId] = useState('all');
+  const { branchId } = useGlobalBranch();
   const [cashierId, setCashierId] = useState('all');
   const [serviceType, setServiceType] = useState('all');
 
@@ -1172,7 +1157,7 @@ function TabLayanan() {
         o.order_number,
         o.customer_name || 'Walk-in',
         o.order_type === 'booking' ? 'Booking' : o.order_type === 'preorder' ? 'Pre-Order' : 'Layanan',
-        `${o.service_date || '-'} ${o.service_time || ''}`.trim(),
+        `${o.service_date ? new Date(o.service_date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'} ${o.service_time || ''}`.trim(),
         Number(o.total || 0),
         Number(o.paid_amount || 0),
         Number(o.remaining_amount || 0),
@@ -1210,7 +1195,7 @@ function TabLayanan() {
       {/* Filters */}
       <div className="flex flex-nowrap overflow-x-auto hide-scrollbar items-center gap-2 pb-1">
         <DateRangePicker from={from} to={to} onFrom={setFrom} onTo={setTo} />
-        <BranchCashierFilter branchId={branchId} cashierId={cashierId} onBranch={(v) => { setBranchId(v); setCashierId('all'); }} onCashier={setCashierId} />
+        <BranchCashierFilter cashierId={cashierId} onCashier={setCashierId} />
         <Select value={serviceType} onValueChange={setServiceType}>
           <SelectTrigger className="w-[130px] h-8 text-xs shrink-0"><SelectValue placeholder="Semua Tipe" /></SelectTrigger>
           <SelectContent>
@@ -1399,7 +1384,7 @@ function TabLayanan() {
                             <Badge variant="outline" className={`text-[10px] ${typeCls}`}>{typeLabel}</Badge>
                           </TableCell>
                           <TableCell className="text-xs">
-                            {o.service_date || '-'}
+                            {o.service_date ? new Date(o.service_date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}
                             {o.service_time && <span className="ml-1 font-mono text-[10px] bg-blue-50 text-blue-700 px-1 rounded">{o.service_time}</span>}
                           </TableCell>
                           <TableCell className="text-right font-semibold text-sm">{formatRp(o.total)}</TableCell>

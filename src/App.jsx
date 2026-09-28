@@ -4,6 +4,7 @@ import { PermissionsProvider } from './context/PermissionsContext';
 import { SocketProvider } from './context/SocketContext';
 import { ToastProvider } from './components/ui/toast';
 import { SidebarProvider } from './context/SidebarContext';
+import { BranchProvider } from './context/BranchContext';
 import AppLayout from './components/layout/AppLayout';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
@@ -123,13 +124,15 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <PermissionsProvider>
-          <SocketProvider>
-            <ToastProvider>
-              <AppRoutes />
-            </ToastProvider>
-          </SocketProvider>
-        </PermissionsProvider>
+        <BranchProvider>
+          <PermissionsProvider>
+            <SocketProvider>
+              <ToastProvider>
+                <AppRoutes />
+              </ToastProvider>
+            </SocketProvider>
+          </PermissionsProvider>
+        </BranchProvider>
       </AuthProvider>
     </BrowserRouter>
   );

@@ -17,6 +17,7 @@ import {
   Utensils, Receipt, Layers, User, UserPlus, Phone, Star, Wallet, QrCode, Clock, Building2, Gift, Sparkles, Ticket, TrendingUp, AlertTriangle,
   Maximize, Minimize, Store, AlertCircle, CalendarCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useGlobalBranch } from '../context/BranchContext';
 
 const ORDER_TYPES = [
   { value: 'dine-in',  label: 'Dine-in',    icon: Utensils },
@@ -120,14 +121,14 @@ export default function POSPage() {
   const [appliedVoucher, setAppliedVoucher] = useState(null);
 
   const { user: currentUser } = useAuth();
-  const [adminBranchId, setAdminBranchId] = useState('');
+  const { branchId: effectiveBranchId, setBranchId: setAdminBranchId, isAdmin } = useGlobalBranch();
   
-  const effectiveBranchId = currentUser?.branch_id || adminBranchId;
-  const isBranchSelected = !!effectiveBranchId;
+  const isBranchSelected = !!effectiveBranchId && effectiveBranchId !== 'all';
 
   // Data
   const debouncedSearch = useDebounce(search, 350);
   const branchQs = isBranchSelected ? `&branch_id=${effectiveBranchId}` : '';
+  const branchQsFirst = isBranchSelected ? `?branch_id=${effectiveBranchId}` : '';
   const qs = `/products?limit=200${(activeCategory !== 'all' && activeCategory !== 'promo' && activeCategory !== 'services') ? `&category=${activeCategory}` : ''}${activeCategory === 'services' ? '&product_type=service' : ''}${debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ''}${branchQs}`;
   
   // Conditionally fetch data if branch is required but not selected
@@ -136,9 +137,9 @@ export default function POSPage() {
   const { data: payData }      = useFetch('/payments/methods');
   const { data: settingsData } = useFetch('/settings');
   const { data: vouchersData } = useFetch('/vouchers?is_active=true');
-  const { data: tablesData, refetch: refetchTables } = useFetch(isBranchSelected ? `/tables${branchQs}` : null);
+  const { data: tablesData, refetch: refetchTables } = useFetch(isBranchSelected ? `/tables${branchQsFirst}` : null);
   const { data: branchesData } = useFetch('/branches');
-  const { data: currentShiftData, refetch: refetchShift } = useFetch(isBranchSelected ? `/shifts/current${branchQs}` : null);
+  const { data: currentShiftData, refetch: refetchShift } = useFetch(isBranchSelected ? `/shifts/current${branchQsFirst}` : null);
   const currentBranch = effectiveBranchId
     ? (branchesData?.branches || []).find(b => b.id === Number(effectiveBranchId))
     : null;
@@ -567,7 +568,7 @@ export default function POSPage() {
     <div ref={posRef} className="flex flex-col lg:flex-row h-full overflow-hidden bg-muted/30">
       
       {/* Admin Branch Selection Enforcement */}
-      {currentUser?.role === 'admin' && !effectiveBranchId && (
+      {currentUser?.role === 'admin' && (!effectiveBranchId || effectiveBranchId === 'all') && (
         <div className="absolute inset-0 z-50 bg-background/95 backdrop-blur-sm flex flex-col items-center justify-center p-4">
           <div className="bg-card border rounded-2xl shadow-xl p-8 max-w-sm w-full text-center space-y-6">
             <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
@@ -577,7 +578,7 @@ export default function POSPage() {
               <h2 className="text-xl font-bold mb-2">Pilih Cabang Aktif</h2>
               <p className="text-sm text-muted-foreground">Sebagai Owner/Admin, Anda wajib memilih sesi cabang sebelum menggunakan POS agar data penjualan dan stok tersimpan di cabang yang tepat.</p>
             </div>
-            <Select value={adminBranchId || ''} onValueChange={setAdminBranchId}>
+            <Select value={effectiveBranchId || ''} onValueChange={setAdminBranchId}>
               <SelectTrigger className="h-12"><SelectValue placeholder="Pilih Cabang..." /></SelectTrigger>
               <SelectContent>
                 {(branchesData?.branches || []).map(b => (

@@ -34,34 +34,11 @@ const STATUS_LABEL = {
   cancelled: { label: 'Dibatalkan', cls: 'badge-status-cancelled' },
 };
 
-function BranchFilter({ branchId, onBranch }) {
-  const { user } = useAuth();
-  const isAdmin = user?.role === 'admin';
-  const { data: branchData } = useFetch(isAdmin ? '/branches' : null);
-  const branches = branchData?.branches || [];
-
-  useEffect(() => {
-    if (!isAdmin && user?.branch_id) {
-      onBranch(String(user.branch_id));
-    }
-  }, [isAdmin, user?.branch_id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  if (!isAdmin) return null;
-
-  return (
-    <Select value={branchId} onValueChange={onBranch}>
-      <SelectTrigger className="w-36 h-8 text-xs"><SelectValue placeholder="Semua Cabang" /></SelectTrigger>
-      <SelectContent>
-        <SelectItem value="all">Semua Cabang</SelectItem>
-        {branches.map((b) => <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>)}
-      </SelectContent>
-    </Select>
-  );
-}
+import { useGlobalBranch } from '../context/BranchContext';
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const [branchId, setBranchId] = useState('all');
+  const { branchId } = useGlobalBranch();
 
   const qs = new URLSearchParams();
   if (branchId !== 'all') qs.set('branch_id', branchId);
@@ -88,10 +65,6 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-nowrap overflow-x-auto hide-scrollbar items-center gap-2 pb-1">
-        <BranchFilter branchId={branchId} onBranch={setBranchId} />
-      </div>
-
       {loading ? (
         <div className="flex items-center justify-center h-64">
           <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
@@ -178,7 +151,7 @@ export default function DashboardPage() {
                     <div className="flex items-center gap-3">
                       <span className={s.cls}>{s.label}</span>
                       <p className="text-sm font-semibold">
-                        Rp {Number(order.total_amount || 0).toLocaleString('id')}
+                        Rp {Number(order.total || 0).toLocaleString('id')}
                       </p>
                     </div>
                   </div>

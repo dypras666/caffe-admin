@@ -7,6 +7,33 @@ import { getDevicePrinter } from '../../lib/printer';
 import { useSocket } from '../../context/SocketContext';
 import { useToast } from '../../components/ui/toast';
 import { useState, useEffect } from 'react';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../../components/ui/select';
+import { useGlobalBranch } from '../../context/BranchContext';
+import { useFetch } from '../../hooks/useApi';
+import { Building2 } from 'lucide-react';
+
+function GlobalBranchSelect() {
+  const { branchId, setBranchId, isAdmin } = useGlobalBranch();
+  const { data } = useFetch('/branches');
+  const branches = data?.branches || [];
+
+  if (!isAdmin) return null;
+
+  return (
+    <div className="flex items-center gap-1.5 hidden md:flex border rounded-lg px-2 h-9 bg-muted/20">
+      <Building2 className="w-4 h-4 text-muted-foreground shrink-0" />
+      <Select value={branchId || ''} onValueChange={setBranchId}>
+        <SelectTrigger className="w-48 h-8 border-0 bg-transparent shadow-none text-xs focus:ring-0">
+          <SelectValue placeholder="Pilih Cabang Aktif" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">Semua Cabang</SelectItem>
+          {branches.map(b => <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>)}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
 
 export default function Topbar({ title }) {
   const { collapsed, toggle, setMobileOpen } = useSidebar();
@@ -50,6 +77,7 @@ export default function Topbar({ title }) {
       </h1>
 
       <div className="flex items-center gap-2">
+        <GlobalBranchSelect />
         {/* Device printer quick-access */}
         <DevicePrinterSettings trigger={
           <button className={cn(
