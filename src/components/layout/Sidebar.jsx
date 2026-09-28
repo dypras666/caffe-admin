@@ -7,7 +7,7 @@ import {
   Warehouse, ShieldCheck, MonitorSmartphone, UtensilsCrossed,
   Printer, Layers, FlaskConical, BookMarked, Receipt, Banknote, Building2, QrCode,
   UserCheck, ChefHat, Scale, Users2, Wifi, BarChart3, Clock, Router, FileText,
-  TrendingUp, CalendarCheck, Ticket, DatabaseBackup, PanelTop,
+  TrendingUp, CalendarCheck, Ticket, DatabaseBackup, PanelTop, Scan, CalendarDays, Timer
 } from 'lucide-react';
 import { useSidebar } from '../../context/SidebarContext';
 import { useAuth } from '../../context/AuthContext';
@@ -17,7 +17,7 @@ import api from '../../lib/api';
 // ─── Nav structure builder ────────────────────────────────────
 function buildNavGroups(settings = {}) {
   const {
-    hrEnabled = false,
+    hrEnabled = true,
     bookingEnabled = true,
     inventoryEnabled = true,
     wifiEnabled = true,
@@ -117,8 +117,11 @@ function buildNavGroups(settings = {}) {
     color: 'text-violet-600',
     adminOnly: true,
     items: [
-      { to: '/hr',      icon: Users,       label: 'Karyawan & Absensi', adminOnly: true },
-      { to: '/hr/kpi',  icon: TrendingUp,  label: 'KPI',                adminOnly: true },
+      { to: '/hr',           icon: Users,        label: 'Karyawan & Absensi', adminOnly: true },
+      { to: '/hr/schedule',  icon: CalendarDays, label: 'Jadwal Kerja',       adminOnly: true },
+      { to: '/hr/overtime',  icon: Timer,        label: 'Lembur',             adminOnly: true },
+      { to: '/hr/kpi',       icon: TrendingUp,   label: 'KPI',                adminOnly: true },
+      { to: '/kiosk',        icon: Scan,         label: 'Kiosk Absensi (Live)', external: true },
     ],
   }] : []),
   {
@@ -192,6 +195,8 @@ function NavItem({ item, collapsed, indent = false }) {
   return (
     <NavLink
       to={item.to}
+      target={item.external ? '_blank' : undefined}
+      rel={item.external ? 'noopener noreferrer' : undefined}
       className={cn(
         'nav-link group relative',
         isActive && 'active',
@@ -287,7 +292,7 @@ export default function Sidebar() {
   const { user } = useAuth();
   const location = useLocation();
   const [settings, setSettings] = useState({
-    hrEnabled: false,
+    hrEnabled: true,
     bookingEnabled: true,
     inventoryEnabled: true,
     wifiEnabled: true,

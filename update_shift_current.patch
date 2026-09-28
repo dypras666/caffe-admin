@@ -1,0 +1,30 @@
+--- routes/shifts.js
++++ routes/shifts.js
+@@ -144,15 +144,23 @@
+   try {
+     let query, params;
+     if (req.user.role === 'admin') {
+-      query = `SELECT s.*, u.name AS opened_by_name FROM shifts s
+-               LEFT JOIN users u ON u.id = s.opened_by
+-               WHERE s.status = 'open' ORDER BY s.opened_at DESC LIMIT 1`;
+-      params = [];
++      const branchId = req.query.branch_id;
++      if (branchId && branchId !== 'all') {
++        query = `SELECT s.*, u.name AS opened_by_name FROM shifts s
++                 LEFT JOIN users u ON u.id = s.opened_by
++                 WHERE s.status = 'open' AND (s.branch_id = ? OR s.branch_id IS NULL)
++                 ORDER BY s.opened_at DESC LIMIT 1`;
++        params = [branchId];
++      } else {
++        query = `SELECT s.*, u.name AS opened_by_name FROM shifts s
++                 LEFT JOIN users u ON u.id = s.opened_by
++                 WHERE s.status = 'open' ORDER BY s.opened_at DESC LIMIT 1`;
++        params = [];
++      }
+     } else {
+       query = `SELECT s.*, u.name AS opened_by_name FROM shifts s
+                LEFT JOIN users u ON u.id = s.opened_by
+                WHERE s.status = 'open' AND s.opened_by = ?
+                ORDER BY s.opened_at DESC LIMIT 1`;
+       params = [req.user.id];
+     }

@@ -47,10 +47,20 @@ export default function TableOrderPage() {
   const [selectedTable, setSelectedTable] = useState(null);
   const socket = useSocket();
   const { data: tablesData, loading: loadingTables, refetch: refetchTables } = useFetch('/tables');
+  const { data: activeOrdersData, refetch: refetchPending } = useFetch('/orders?status=pending&limit=100&page=1');
+  const { data: preparingData, refetch: refetchPreparing } = useFetch('/orders?status=preparing&limit=100&page=1');
+  const { data: readyData, refetch: refetchReady } = useFetch('/orders?status=ready&limit=100&page=1');
+
+  const refetchAll = () => {
+    refetchTables();
+    refetchPending();
+    refetchPreparing();
+    refetchReady();
+  };
 
   useEffect(() => {
     if (!socket) return;
-    const handleRefresh = () => refetchTables();
+    const handleRefresh = () => refetchAll();
     socket.on('table_status_changed', handleRefresh);
     socket.on('order_created', handleRefresh);
     socket.on('order_updated', handleRefresh);
@@ -59,7 +69,8 @@ export default function TableOrderPage() {
       socket.off('order_created', handleRefresh);
       socket.off('order_updated', handleRefresh);
     };
-  }, [socket, refetchTables]);
+  }, [socket, refetchTables, refetchPending, refetchPreparing, refetchReady]);
+
   const { data: roomsData } = useFetch('/rooms');
   const { data: branchesData } = useFetch('/branches');
   const currentBranch = currentUser?.branch_id
@@ -70,11 +81,6 @@ export default function TableOrderPage() {
   const tables = tablesData?.tables || [];
   const rooms = roomsData?.rooms || [];
   const filtered = tables.filter(t => t.is_active && (roomFilter === 'all' || String(t.room_id) === roomFilter));
-
-  // Active orders summary per table
-  const { data: activeOrdersData, refetch: refetchOrders } = useFetch('/orders?status=pending&limit=100&page=1');
-  const { data: preparingData } = useFetch('/orders?status=preparing&limit=100&page=1');
-  const { data: readyData } = useFetch('/orders?status=ready&limit=100&page=1');
 
   const allActiveOrders = [
     ...(activeOrdersData?.orders || []),
@@ -91,7 +97,7 @@ export default function TableOrderPage() {
     return acc;
   }, {});
 
-  const refetchAll = () => { refetchTables(); refetchOrders(); };
+
 
   if (shiftRequired) {
     return (

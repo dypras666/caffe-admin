@@ -1,5 +1,6 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useParams, useLocation } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import { useFetch } from '../hooks/useApi';
 import api from '../lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -13,9 +14,10 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '.
 import { useToast } from '../components/ui/toast';
 import { cn } from '../lib/utils';
 import {
-  Users, Clock, CalendarCheck, CreditCard, RefreshCcw, Plus, Pencil, Trash2,
+  Users, Clock, CalendarCheck, CreditCard, RefreshCcw, RotateCcw, Plus, Pencil, Trash2,
   Loader2, ArrowRightLeft, Check, X, AlertCircle, ChevronRight,
-  Building2, UserCheck, UserX, Settings, Download, TrendingUp, CalendarDays, ChevronLeft, ChevronRight as ChevronRightIcon,
+  Building2, UserCheck, UserX, Settings, Download, TrendingUp, CalendarDays, ChevronLeft, ChevronRight as ChevronRightIcon, Wand2,
+  Timer, ExternalLink, Scan, Search, ChevronUp, ChevronDown, Eye, EyeOff
 } from 'lucide-react';
 
 const FMT_RP = (v) => `Rp ${Number(v || 0).toLocaleString('id')}`;
@@ -30,6 +32,33 @@ export default function HRPage({ defaultTab = 'employees' }) {
   const settings = settingsData?.settings || {};
   const isEnabled = settings.hr_enabled === 'true';
   const location = useLocation();
+
+  const getInitialTab = () => {
+    if (location.pathname.includes('/hr/kpi')) return 'kpi';
+    if (location.pathname.includes('/hr/overtime') || location.pathname.includes('/hr/lembur')) return 'overtime';
+    if (location.pathname.includes('/hr/schedule')) return 'schedule';
+    return defaultTab || 'employees';
+  };
+  const [activeTab, setActiveTab] = useState(getInitialTab);
+
+  useEffect(() => {
+    if (location.pathname.includes('/hr/kpi')) setActiveTab('kpi');
+    else if (location.pathname.includes('/hr/overtime') || location.pathname.includes('/hr/lembur')) setActiveTab('overtime');
+    else if (location.pathname.includes('/hr/schedule')) setActiveTab('schedule');
+    else if (defaultTab) setActiveTab(defaultTab);
+  }, [location.pathname, defaultTab]);
+
+  const [showSummary, setShowSummary] = useState(() => {
+    const saved = localStorage.getItem('hr_show_main_summary');
+    return saved !== null ? saved === 'true' : true;
+  });
+  const toggleSummary = () => {
+    setShowSummary(prev => {
+      const next = !prev;
+      localStorage.setItem('hr_show_main_summary', String(next));
+      return next;
+    });
+  };
 
   const handleToggleHR = async () => {
     try {
@@ -87,7 +116,30 @@ export default function HRPage({ defaultTab = 'employees' }) {
             <p className="text-xs text-muted-foreground">Karyawan · Absensi · Shift · KPI · Penggajian</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={toggleSummary}
+            className={cn(
+              "text-xs flex items-center gap-1.5 transition-colors border-dashed",
+              !showSummary ? "bg-muted/80 text-muted-foreground border-border" : "border-violet-300 text-violet-700 bg-violet-50/50"
+            )}
+            title={showSummary ? "Sembunyikan kartu ringkasan untuk hemat tempat" : "Tampilkan kartu ringkasan"}
+          >
+            {showSummary ? <ChevronUp className="w-3.5 h-3.5 text-violet-600" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            <span>{showSummary ? 'Sembunyikan Card' : 'Tampilkan Card'}</span>
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => window.open('/kiosk', '_blank')}
+            className="text-xs flex items-center gap-1.5 border-violet-300 text-violet-700 bg-violet-50 hover:bg-violet-100 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-800"
+          >
+            <Scan className="w-3.5 h-3.5" />
+            <span>Buka Kiosk Absensi</span>
+            <ExternalLink className="w-3 h-3 opacity-60" />
+          </Button>
           <Badge className="bg-violet-100 text-violet-700 border-violet-200">Aktif</Badge>
           <Button size="sm" variant="ghost" onClick={handleToggleHR} className="text-xs text-muted-foreground">
             Nonaktifkan
@@ -95,18 +147,24 @@ export default function HRPage({ defaultTab = 'employees' }) {
         </div>
       </div>
 
-      {/* Summary */}
-      <HRSummary />
+      {/* Summary (Collapsible) */}
+      <div className={cn(
+        "transition-all duration-300 ease-in-out overflow-hidden",
+        showSummary ? "max-h-[500px] opacity-100" : "max-h-0 opacity-0 pointer-events-none"
+      )}>
+        <HRSummary />
+      </div>
 
       {/* Tabs */}
-      <Tabs value={location.pathname.includes('/hr/kpi') ? 'kpi' : undefined} defaultValue={defaultTab}>
-        <TabsList className="h-auto p-1 gap-1">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="h-auto p-1 gap-1 flex-wrap justify-start max-w-full">
           {[
             { v: 'employees', label: 'Karyawan', icon: Users },
             { v: 'attendance', label: 'Absensi', icon: CalendarCheck },
             { v: 'schedule', label: 'Jadwal', icon: CalendarDays },
             { v: 'shifts', label: 'Shift Kerja', icon: Clock },
             { v: 'swaps', label: 'Tukar Shift', icon: ArrowRightLeft },
+            { v: 'overtime', label: 'Lembur', icon: Timer },
             { v: 'kpi', label: 'KPI', icon: TrendingUp },
             { v: 'kpi-metrics', label: 'Metrik KPI', icon: TrendingUp },
             { v: 'payroll', label: 'Penggajian', icon: CreditCard },
@@ -122,6 +180,7 @@ export default function HRPage({ defaultTab = 'employees' }) {
         <TabsContent value="schedule" className="mt-4"><ScheduleTab /></TabsContent>
         <TabsContent value="shifts" className="mt-4"><WorkShiftsTab /></TabsContent>
         <TabsContent value="swaps" className="mt-4"><ShiftSwapsTab /></TabsContent>
+        <TabsContent value="overtime" className="mt-4"><OvertimeTab /></TabsContent>
         <TabsContent value="kpi" className="mt-4"><EmployeeKPITab /></TabsContent>
         <TabsContent value="kpi-metrics" className="mt-4"><KPIMetricsTab /></TabsContent>
         <TabsContent value="payroll" className="mt-4"><PayrollTab /></TabsContent>
@@ -136,7 +195,7 @@ function HRSummary() {
   const { data } = useFetch(`/hr/summary?month=${THIS_MONTH}`);
   const d = data || {};
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+    <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
       <SummaryCard icon={Users} label="Karyawan Aktif" value={d.employees?.active || 0} color="violet" />
       <SummaryCard icon={CalendarCheck} label="Hadir Bulan Ini" value={d.attendance?.present || 0} color="emerald" />
       <SummaryCard icon={CreditCard} label="Total Payroll" value={FMT_RP(d.payroll?.total_payroll)} color="blue" small />
@@ -147,19 +206,215 @@ function HRSummary() {
 }
 
 function SummaryCard({ icon: Icon, label, value, color, small, badge }) {
-  const colors = { violet: 'bg-violet-50 border-violet-100', emerald: 'bg-emerald-50 border-emerald-100', blue: 'bg-blue-50 border-blue-100', amber: 'bg-amber-50 border-amber-100' };
-  const textColors = { violet: 'text-violet-600', emerald: 'text-emerald-600', blue: 'text-blue-600', amber: 'text-amber-600' };
+  const colors = { 
+    violet: 'bg-violet-50 border-violet-100', 
+    emerald: 'bg-emerald-50 border-emerald-100', 
+    blue: 'bg-blue-50 border-blue-100', 
+    amber: 'bg-amber-50 border-amber-100',
+    rose: 'bg-rose-50 border-rose-100'
+  };
+  const textColors = { 
+    violet: 'text-violet-600', 
+    emerald: 'text-emerald-600', 
+    blue: 'text-blue-600', 
+    amber: 'text-amber-600',
+    rose: 'text-rose-600'
+  };
   return (
-    <Card className={`border ${colors[color]}`}>
+    <Card className={`border ${colors[color]} hover:shadow-sm transition-shadow`}>
       <CardContent className="p-4">
         <div className="flex items-center gap-2 mb-2">
           <Icon className={`w-4 h-4 ${textColors[color]}`} />
           <span className="text-xs text-muted-foreground">{label}</span>
         </div>
-        <p className={`font-bold ${small ? 'text-base' : 'text-2xl'} ${textColors[color]}`}>{value}</p>
+        <p className={`font-bold ${small ? 'text-lg' : 'text-2xl'} ${textColors[color]}`}>{value}</p>
         {badge && <p className="text-[10px] text-amber-600 mt-1">{badge}</p>}
       </CardContent>
     </Card>
+  );
+}
+
+// ─── Searchable Employee Select (Server-Side) ─────────────────
+function SearchableEmployeeSelect({ value, onChange, onSelectEmployee, disabled, placeholder = 'Pilih Karyawan...' }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [employees, setEmployees] = useState([]);
+  const [selectedEmp, setSelectedEmp] = useState(null);
+  const containerRef = useRef(null);
+
+  // Load selected employee details if value is provided
+  useEffect(() => {
+    if (!value) {
+      setSelectedEmp(null);
+      return;
+    }
+    const found = employees.find(e => String(e.id) === String(value));
+    if (found) {
+      setSelectedEmp(found);
+      return;
+    }
+    let cancel = false;
+    api.get(`/hr/employees/${value}`)
+      .then(res => {
+        if (!cancel && res.data?.employee) setSelectedEmp(res.data.employee);
+      })
+      .catch(() => {});
+    return () => { cancel = true; };
+  }, [value, employees]);
+
+  // Fetch / Search server-side
+  const searchEmployees = useCallback(async (q = '') => {
+    setLoading(true);
+    try {
+      const res = await api.get(`/hr/employees?status=active&search=${encodeURIComponent(q)}&limit=30`);
+      setEmployees(res.data?.employees || []);
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (open) {
+      searchEmployees(query);
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const timer = setTimeout(() => {
+      searchEmployees(query);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [query, open, searchEmployees]);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+    if (open) document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [open]);
+
+  const handleSelect = (emp) => {
+    setSelectedEmp(emp);
+    onChange?.(String(emp.id));
+    onSelectEmployee?.(emp);
+    setOpen(false);
+    setQuery('');
+  };
+
+  return (
+    <div className="relative w-full" ref={containerRef}>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen(prev => !prev)}
+        className={cn(
+          "w-full flex items-center justify-between rounded-lg border border-input bg-background px-3 py-2 text-xs shadow-sm focus:outline-none focus:ring-1 focus:ring-ring text-left transition-colors",
+          disabled && "opacity-50 cursor-not-allowed",
+          open && "ring-1 ring-ring border-ring"
+        )}
+      >
+        {selectedEmp ? (
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-6 h-6 rounded-full bg-violet-100 dark:bg-violet-900/60 text-violet-700 dark:text-violet-300 font-bold text-[10px] flex items-center justify-center shrink-0">
+              {selectedEmp.full_name?.slice(0, 2).toUpperCase() || 'EM'}
+            </div>
+            <div className="min-w-0 flex-1">
+              <span className="font-semibold text-foreground truncate block leading-tight">
+                {selectedEmp.full_name}
+              </span>
+              <span className="text-[10px] text-muted-foreground block truncate">
+                {selectedEmp.employee_code || `ID: ${selectedEmp.id}`} · {selectedEmp.department || 'Umum'}
+              </span>
+            </div>
+          </div>
+        ) : (
+          <span className="text-muted-foreground">{placeholder}</span>
+        )}
+        <ChevronDown className={cn("w-3.5 h-3.5 text-muted-foreground shrink-0 transition-transform", open && "rotate-180")} />
+      </button>
+
+      {open && (
+        <div className="absolute top-full left-0 mt-1 w-full z-[120] rounded-xl border bg-popover text-popover-foreground shadow-xl overflow-hidden animate-in fade-in-0 zoom-in-95">
+          <div className="p-2 border-b bg-muted/30">
+            <div className="relative flex items-center">
+              <Search className="w-3.5 h-3.5 text-muted-foreground absolute left-2.5 pointer-events-none" />
+              <input
+                autoFocus
+                type="text"
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                placeholder="Ketik nama, NIP, atau departemen..."
+                className="w-full pl-8 pr-7 py-1.5 text-xs bg-background border rounded-lg focus:outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/70"
+              />
+              {loading ? (
+                <Loader2 className="w-3.5 h-3.5 text-muted-foreground animate-spin absolute right-2.5" />
+              ) : query ? (
+                <button
+                  type="button"
+                  onClick={() => setQuery('')}
+                  className="w-3.5 h-3.5 text-muted-foreground hover:text-foreground absolute right-2.5"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="max-h-56 overflow-y-auto p-1 divide-y divide-border/30">
+            {loading && !employees.length ? (
+              <div className="p-4 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span>Mencari di server...</span>
+              </div>
+            ) : employees.length === 0 ? (
+              <div className="p-4 text-center text-xs text-muted-foreground">
+                Tidak ada karyawan yang cocok dengan pencarian "{query}".
+              </div>
+            ) : (
+              employees.map(emp => {
+                const isSelected = String(emp.id) === String(value);
+                return (
+                  <button
+                    key={emp.id}
+                    type="button"
+                    onClick={() => handleSelect(emp)}
+                    className={cn(
+                      "w-full flex items-center justify-between p-2 rounded-lg text-left transition-colors text-xs hover:bg-muted/70",
+                      isSelected && "bg-violet-50 dark:bg-violet-950/40 text-violet-900 dark:text-violet-200 font-semibold"
+                    )}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="w-6 h-6 rounded-full bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300 font-bold text-[10px] flex items-center justify-center shrink-0">
+                        {emp.full_name?.slice(0, 2).toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate font-medium">{emp.full_name}</p>
+                        <p className="text-[10px] text-muted-foreground truncate">
+                          {emp.employee_code} · {emp.department || 'Umum'} {emp.position ? `(${emp.position})` : ''}
+                        </p>
+                      </div>
+                    </div>
+                    {isSelected && <Check className="w-4 h-4 text-violet-600 shrink-0" />}
+                  </button>
+                );
+              })
+            )}
+          </div>
+          {employees.length > 0 && (
+            <div className="p-1.5 border-t bg-muted/20 text-[10px] text-muted-foreground text-center">
+              Pencarian Server-Side · {employees.length} hasil ditampilkan
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -175,12 +430,12 @@ function EmployeesTab() {
   const [open, setOpen] = useState(false);
   const [editId, setEditId] = useState(null);
   const [saving, setSaving] = useState(false);
-  const EMPTY_FORM = { full_name: '', employee_code: '', nik: '', phone: '', address: '', department: '', position: '', employment_type: 'full-time', join_date: '', base_salary: '', hourly_rate: '', bank_name: '', bank_account: '', bank_account_name: '', status: 'active', create_user_account: false, email: '', password: '', user_role: 'kasir', station_id: '', branch_id: '' };
+  const EMPTY_FORM = { full_name: '', employee_code: '', nik: '', phone: '', address: '', department: '', position: '', employment_type: 'full-time', join_date: '', base_salary: '', hourly_rate: '', bank_name: '', bank_account: '', bank_account_name: '', status: 'active', pin_code: '', face_photo: null, face_descriptor: null, create_user_account: false, email: '', password: '', user_role: 'kasir', station_id: '', branch_id: '' };
   const [form, setForm] = useState(EMPTY_FORM);
 
   const openCreate = () => { setForm(EMPTY_FORM); setEditId(null); setOpen(true); };
   const openEdit = (e) => {
-    setForm({ full_name: e.full_name, employee_code: e.employee_code, nik: e.nik || '', phone: e.phone || '', address: e.address || '', department: e.department || '', position: e.position || '', employment_type: e.employment_type || 'full-time', join_date: e.join_date?.slice(0,10) || '', base_salary: e.base_salary || '', hourly_rate: e.hourly_rate || '', bank_name: e.bank_name || '', bank_account: e.bank_account || '', bank_account_name: e.bank_account_name || '', status: e.status, create_user_account: false, email: '', password: '', user_role: 'kasir', station_id: '', branch_id: e.branch_id || '' });
+    setForm({ full_name: e.full_name, employee_code: e.employee_code, nik: e.nik || '', phone: e.phone || '', address: e.address || '', department: e.department || '', position: e.position || '', employment_type: e.employment_type || 'full-time', join_date: e.join_date?.slice(0,10) || '', base_salary: e.base_salary || '', hourly_rate: e.hourly_rate || '', bank_name: e.bank_name || '', bank_account: e.bank_account || '', bank_account_name: e.bank_account_name || '', status: e.status, pin_code: e.pin_code || '', face_photo: e.face_photo || null, face_descriptor: e.face_descriptor || null, create_user_account: false, email: '', password: '', user_role: 'kasir', station_id: '', branch_id: e.branch_id || '' });
     setEditId(e.id); setOpen(true);
   };
 
@@ -245,6 +500,22 @@ function EmployeesTab() {
               ) : (
                 <p className="text-[10px] text-muted-foreground mt-1">Belum ada akun login</p>
               )}
+              <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                {emp.pin_code && (
+                  <Badge variant="outline" className="text-[9px] border-violet-200 text-violet-700 bg-violet-50/50">
+                    PIN: {emp.pin_code}
+                  </Badge>
+                )}
+                {emp.face_photo ? (
+                  <Badge variant="outline" className="text-[9px] border-emerald-200 text-emerald-700 bg-emerald-50/50">
+                    ✓ Wajah
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="text-[9px] border-slate-200 text-slate-400">
+                    Tanpa Wajah
+                  </Badge>
+                )}
+              </div>
               <div className="mt-3 pt-3 border-t flex items-center justify-between">
                 <span className="text-xs font-semibold">{FMT_RP(emp.base_salary)}<span className="text-muted-foreground font-normal">/bln</span></span>
                 <div className="flex gap-1">
@@ -349,6 +620,40 @@ function EmployeesTab() {
                   <div>
                     <label className="text-xs text-muted-foreground">Atas Nama</label>
                     <Input value={form.bank_account_name} onChange={e => setForm(f=>({...f,bank_account_name:e.target.value}))} className="mt-1" />
+                  </div>
+                </div>
+              </div>
+              <div className="col-span-2 border-t pt-3">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                  <Scan className="w-3.5 h-3.5 text-violet-500" /> Akses Absensi Kiosk (PIN & Wajah)
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground">PIN Kiosk (4-6 digit angka)</label>
+                    <Input
+                      value={form.pin_code || ''}
+                      onChange={e => setForm(f=>({...f,pin_code:e.target.value}))}
+                      placeholder="Contoh: 1001"
+                      className="mt-1 font-mono tracking-widest text-sm"
+                      maxLength={6}
+                    />
+                    <p className="text-[10px] text-muted-foreground mt-0.5">Digunakan karyawan untuk absen di kiosk tanpa harus login.</p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground">Status Wajah</label>
+                    <div className="mt-1 flex items-center gap-2">
+                      {form.face_photo ? (
+                        <div className="flex items-center gap-2">
+                          <img src={form.face_photo} alt="Face" className="w-8 h-8 rounded-lg object-cover border" />
+                          <span className="text-xs text-emerald-600 font-semibold">✓ Wajah Terdaftar</span>
+                          <Button size="xs" variant="ghost" type="button" className="text-destructive h-7 px-2 text-[10px]" onClick={() => setForm(f=>({...f, face_photo: null, face_descriptor: null}))}>
+                            Hapus
+                          </Button>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground italic">Belum didaftarkan (Bisa didaftarkan langsung di Kiosk)</span>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -480,6 +785,26 @@ function AttendanceTab() {
 
   return (
     <div className="space-y-4">
+      {/* Kiosk Mode Launcher Banner */}
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 rounded-2xl bg-gradient-to-r from-violet-900 via-indigo-900 to-purple-900 text-white shadow-md">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-white/10 border border-white/20 flex items-center justify-center">
+            <Scan className="w-5 h-5 text-violet-300" />
+          </div>
+          <div>
+            <h3 className="font-bold text-sm">Layar Kiosk Absensi Mandiri (Scan Wajah / PIN)</h3>
+            <p className="text-xs text-violet-200">Karyawan dapat langsung scan wajah atau ketuk PIN tanpa harus login ke akun.</p>
+          </div>
+        </div>
+        <Button
+          onClick={() => window.open('/kiosk', '_blank')}
+          className="bg-white text-violet-950 hover:bg-violet-100 font-bold text-xs px-4 h-9 shadow flex items-center gap-1.5"
+        >
+          <span>Buka Layar Kiosk</span>
+          <ExternalLink className="w-3.5 h-3.5" />
+        </Button>
+      </div>
+
       {/* Quick clock-in/out */}
       <Card className="border-violet-100 bg-violet-50/30">
         <CardContent className="p-4">
@@ -578,7 +903,12 @@ function ScheduleTab() {
 
   const [weekStart, setWeekStart] = useState(() => getWeekStart());
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [autoGenOpen, setAutoGenOpen] = useState(false);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [assignOpen, setAssignOpen] = useState(null); // { employee_id, full_name, work_date }
+  const [genAlgorithm, setGenAlgorithm] = useState('fair_rotation');
+  const [genOffDays, setGenOffDays] = useState('1');
+  const [genRandomize, setGenRandomize] = useState(true);
 
   const weekDates = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(weekStart);
@@ -607,7 +937,7 @@ function ScheduleTab() {
 
   const employees = empData?.employees || [];
   const schedules = schedData?.schedules || [];
-  const workShifts = shiftData?.work_shifts || [];
+  const workShifts = shiftData?.shifts || shiftData?.work_shifts || (Array.isArray(shiftData) ? shiftData : []);
 
   // Build lookup: "empId_date" → schedule
   const schedMap = {};
@@ -640,9 +970,17 @@ function ScheduleTab() {
           {' — '}
           {new Date(weekEnd).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}
         </span>
-        <Button size="sm" className="gap-1.5 ml-auto" onClick={() => setBulkOpen(true)}>
-          <Plus className="w-4 h-4" />Jadwal Massal
-        </Button>
+        <div className="flex items-center gap-2 ml-auto">
+          <Button size="sm" variant="outline" className="gap-1.5 text-destructive border-destructive hover:bg-destructive/10" onClick={() => setBulkDeleteOpen(true)}>
+            <Trash2 className="w-4 h-4" />Hapus Massal
+          </Button>
+          <Button size="sm" variant="secondary" className="gap-1.5" onClick={() => setAutoGenOpen(true)}>
+            <Wand2 className="w-4 h-4" />Auto Generate
+          </Button>
+          <Button size="sm" className="gap-1.5" onClick={() => setBulkOpen(true)}>
+            <Plus className="w-4 h-4" />Jadwal Massal
+          </Button>
+        </div>
       </div>
 
       {/* Roster grid */}
@@ -677,11 +1015,25 @@ function ScheduleTab() {
                   const key = `${emp.id}_${date}`;
                   const sched = schedMap[key];
                   return (
-                    <td key={date} className="py-1 px-1 text-center align-middle">
+                    <td 
+                      key={date} 
+                      className="py-1 px-1 text-center align-middle"
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        const schedId = e.dataTransfer.getData('sched_id');
+                        if (!schedId) return;
+                        api.put(`/hr/schedules/${schedId}/move`, { target_employee_id: emp.id, target_date: date })
+                          .then(() => { toast.success('Jadwal dipindah'); refetchSched(); })
+                          .catch((err) => toast.error(err.response?.data?.error || 'Gagal'));
+                      }}
+                    >
                       {sched ? (
                         <div className="group relative inline-flex flex-col items-center">
                           <span
-                            className="text-[10px] font-semibold px-2 py-1 rounded-lg cursor-pointer select-none"
+                            draggable
+                            onDragStart={(e) => e.dataTransfer.setData('sched_id', sched.id)}
+                            className="text-[10px] font-semibold px-2 py-1 rounded-lg cursor-grab active:cursor-grabbing select-none hover:-translate-y-0.5 transition-transform shadow-sm"
                             style={{
                               background: sched.color ? `${sched.color}22` : '#6366f122',
                               color: sched.color || '#6366f1',
@@ -735,23 +1087,162 @@ function ScheduleTab() {
           onSaved={() => { setBulkOpen(false); refetchSched(); }}
         />
       )}
+
+      {/* Auto Generate Dialog */}
+      {autoGenOpen && (
+        <Dialog open onOpenChange={() => setAutoGenOpen(false)}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-base font-bold flex items-center gap-2">
+                <Wand2 className="w-5 h-5 text-violet-600" /> Auto Generate Jadwal Shift
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-2 text-xs text-muted-foreground">
+              <div className="bg-violet-50/50 border border-violet-100 p-3 rounded-xl text-center">
+                <span className="text-[11px] text-muted-foreground block mb-0.5">Rentang Periode Jadwal:</span>
+                <span className="font-bold text-violet-800 text-sm">
+                  {new Date(weekStart).toLocaleDateString('id-ID', {day:'numeric', month:'short'})} - {new Date(weekEnd).toLocaleDateString('id-ID', {day:'numeric', month:'short', year:'numeric'})}
+                </span>
+              </div>
+
+              <div>
+                <label className="font-medium text-foreground block mb-1">Pilihan Algoritma Penjadwalan:</label>
+                <Select value={genAlgorithm} onValueChange={setGenAlgorithm}>
+                  <SelectTrigger className="text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="fair_rotation">
+                      Rotasi Cerdas (Smart Rotation) — Bervariasi & Adil
+                    </SelectItem>
+                    <SelectItem value="department">
+                      Berbasis Departemen — Pastikan tiap shift ada Barista/Chef/Kasir
+                    </SelectItem>
+                    <SelectItem value="fair_shuffle">
+                      Acak Adil & Merata (Fair Shuffle) — Acak bebas dengan beban setara
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  {genAlgorithm === 'department'
+                    ? 'Menyeimbangkan staf dari tiap divisi (Dapur, Bar, Service) ke seluruh shift yang aktif.'
+                    : genAlgorithm === 'fair_shuffle'
+                    ? 'Mengacak karyawan per hari secara acak agar suasana kerja selalu dinamis.'
+                    : 'Rotasi berjenjang yang tidak selalu mengulang pola yang sama setiap minggu.'}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-medium text-foreground block mb-1">Hari Libur (Off):</label>
+                  <Select value={genOffDays} onValueChange={setGenOffDays}>
+                    <SelectTrigger className="text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">1 Hari Libur / Minggu</SelectItem>
+                      <SelectItem value="2">2 Hari Libur / Minggu</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <label className="font-medium text-foreground block mb-1">Variasi Pola:</label>
+                  <div className="flex items-center gap-2 h-9 px-3 rounded-md border bg-muted/20">
+                    <input
+                      type="checkbox"
+                      id="genRandomize"
+                      checked={genRandomize}
+                      onChange={e => setGenRandomize(e.target.checked)}
+                      className="rounded border-slate-300 text-violet-600 focus:ring-violet-500"
+                    />
+                    <label htmlFor="genRandomize" className="text-xs text-foreground cursor-pointer font-medium">
+                      Acak Hasil
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-[11px] flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5 text-amber-600" />
+                <span>Jadwal yang sudah ada pada tanggal tersebut akan ditimpa dengan hasil algoritma baru.</span>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2 border-t">
+              <Button size="sm" variant="ghost" onClick={() => setAutoGenOpen(false)}>Batal</Button>
+              <Button
+                size="sm"
+                className="bg-violet-600 hover:bg-violet-700 font-bold"
+                onClick={async () => {
+                  try {
+                    const res = await api.post('/hr/schedules/auto-generate', {
+                      date_from: weekStart,
+                      date_to: weekEnd,
+                      algorithm: genAlgorithm,
+                      off_days_count: parseInt(genOffDays, 10),
+                      randomize: genRandomize
+                    });
+                    toast.success(res.data.message);
+                    setAutoGenOpen(false);
+                    refetchSched();
+                  } catch(e) {
+                    toast.error(e.response?.data?.error || 'Gagal generate');
+                  }
+                }}
+              >
+                Generate Jadwal Sekarang
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Bulk Delete Dialog */}
+      {bulkDeleteOpen && (
+        <Dialog open onOpenChange={() => setBulkDeleteOpen(false)}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="text-sm">Hapus Massal Jadwal</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-2 text-sm text-muted-foreground">
+              <p>Anda yakin ingin menghapus <strong>SEMUA</strong> jadwal pada rentang tanggal ini?</p>
+              <div className="bg-destructive/10 text-destructive p-3 rounded-lg text-center font-medium">
+                {new Date(weekStart).toLocaleDateString('id-ID', {day:'numeric', month:'short'})} - {new Date(weekEnd).toLocaleDateString('id-ID', {day:'numeric', month:'short'})}
+              </div>
+              <p className="text-xs">Tindakan ini tidak dapat dibatalkan!</p>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button size="sm" variant="ghost" onClick={() => setBulkDeleteOpen(false)}>Batal</Button>
+              <Button size="sm" variant="destructive" onClick={async () => {
+                try {
+                  const res = await api.post('/hr/schedules/bulk-delete', { date_from: weekStart, date_to: weekEnd });
+                  toast.success(res.data.message);
+                  setBulkDeleteOpen(false);
+                  refetchSched();
+                } catch(e) { toast.error(e.response?.data?.error || 'Gagal hapus'); }
+              }}>Ya, Hapus Semua</Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }
 
-function AssignShiftDialog({ employee, workShifts, onClose, onSaved }) {
+function AssignShiftDialog({ employee, workShifts = [], onClose, onSaved }) {
   const toast = useToast();
+  const shiftsList = Array.isArray(workShifts) ? workShifts : (workShifts?.shifts || []);
   const [shiftId, setShiftId] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
+    if (!shiftId) return toast.warning('Pilih shift terlebih dahulu');
     setSaving(true);
     try {
       await api.post('/hr/schedules', {
         employee_id: employee.employee_id,
         work_date: employee.work_date,
-        shift_id: shiftId || null,
+        shift_id: shiftId ? parseInt(shiftId) : null,
         notes: notes || null,
       });
       toast.success('Jadwal disimpan');
@@ -766,34 +1257,64 @@ function AssignShiftDialog({ employee, workShifts, onClose, onSaved }) {
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle className="text-sm">Atur Jadwal</DialogTitle>
+          <DialogTitle className="text-sm">Atur Jadwal Shift</DialogTitle>
         </DialogHeader>
-        <div className="space-y-3 text-sm">
-          <div className="bg-muted/40 rounded-lg px-3 py-2">
-            <p className="font-medium">{employee.full_name}</p>
+        <div className="space-y-3.5 text-sm">
+          <div className="bg-muted/40 rounded-lg px-3 py-2 border">
+            <p className="font-semibold text-foreground">{employee.full_name}</p>
             <p className="text-xs text-muted-foreground capitalize">{dateLabel}</p>
           </div>
+
           <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1 block">Shift *</label>
-            <Select value={shiftId} onValueChange={setShiftId}>
-              <SelectTrigger><SelectValue placeholder="Pilih shift..." /></SelectTrigger>
-              <SelectContent>
-                {workShifts.map(s => (
-                  <SelectItem key={s.id} value={String(s.id)}>
-                    {s.shift_name} ({s.start_time?.slice(0,5)}–{s.end_time?.slice(0,5)})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Pilih Shift Kerja *</label>
+            {shiftsList.length === 0 ? (
+              <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs text-amber-700 dark:text-amber-300">
+                Belum ada data shift yang aktif. Silakan buat shift baru pada tab <strong>Shift Kerja</strong>.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="grid grid-cols-1 gap-1.5 max-h-48 overflow-y-auto pr-1">
+                  {shiftsList.map(s => {
+                    const isSelected = shiftId === String(s.id);
+                    return (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => setShiftId(String(s.id))}
+                        className={cn(
+                          "w-full flex items-center justify-between p-2.5 rounded-lg border text-left transition-all text-xs",
+                          isSelected
+                            ? "border-violet-600 bg-violet-50 text-violet-950 font-semibold ring-2 ring-violet-500/20 dark:bg-violet-950/40 dark:text-violet-200 dark:border-violet-500"
+                            : "border-border hover:bg-muted/60"
+                        )}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="w-2.5 h-2.5 rounded-full shrink-0"
+                            style={{ backgroundColor: s.color || '#6366f1' }}
+                          />
+                          <span className="font-medium">{s.shift_name}</span>
+                        </div>
+                        <span className="text-[11px] text-muted-foreground font-normal">
+                          {s.start_time?.slice(0,5)} – {s.end_time?.slice(0,5)}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
+
           <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1 block">Catatan</label>
-            <Input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Opsional" />
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">Catatan (Opsional)</label>
+            <Input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Contoh: Shift ganti / backup" />
           </div>
+
           <div className="flex gap-2 justify-end pt-1">
             <Button variant="outline" size="sm" onClick={onClose}>Batal</Button>
-            <Button size="sm" onClick={handleSave} disabled={saving || !shiftId}>
-              {saving && <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />}Simpan
+            <Button size="sm" onClick={handleSave} disabled={saving || !shiftId} className="bg-violet-600 hover:bg-violet-700 text-white">
+              {saving && <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />}Simpan Jadwal
             </Button>
           </div>
         </div>
@@ -802,8 +1323,9 @@ function AssignShiftDialog({ employee, workShifts, onClose, onSaved }) {
   );
 }
 
-function BulkScheduleDialog({ employees, workShifts, weekStart, onClose, onSaved }) {
+function BulkScheduleDialog({ employees, workShifts = [], weekStart, onClose, onSaved }) {
   const toast = useToast();
+  const shiftsList = Array.isArray(workShifts) ? workShifts : (workShifts?.shifts || []);
   const [selectedEmps, setSelectedEmps] = useState([]);
   const [shiftId, setShiftId] = useState('');
   const [dateFrom, setDateFrom] = useState(weekStart);
@@ -866,17 +1388,39 @@ function BulkScheduleDialog({ employees, workShifts, weekStart, onClose, onSaved
 
           {/* Shift */}
           <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1 block">Shift *</label>
-            <Select value={shiftId} onValueChange={setShiftId}>
-              <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Pilih shift..." /></SelectTrigger>
-              <SelectContent>
-                {workShifts.map(s => (
-                  <SelectItem key={s.id} value={String(s.id)}>
-                    {s.shift_name} ({s.start_time?.slice(0,5)}–{s.end_time?.slice(0,5)})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Pilih Shift Kerja *</label>
+            {shiftsList.length === 0 ? (
+              <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs text-amber-700">
+                Belum ada data shift yang aktif.
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                {shiftsList.map(s => {
+                  const isSelected = shiftId === String(s.id);
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => setShiftId(String(s.id))}
+                      className={cn(
+                        "p-2 rounded-lg border text-left transition-all text-xs flex flex-col gap-0.5",
+                        isSelected
+                          ? "border-violet-600 bg-violet-50 text-violet-950 font-semibold ring-2 ring-violet-500/20 dark:bg-violet-950/40 dark:text-violet-200 dark:border-violet-500"
+                          : "border-border hover:bg-muted/60"
+                      )}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: s.color || '#6366f1' }} />
+                        <span className="font-medium truncate">{s.shift_name}</span>
+                      </div>
+                      <span className="text-[10px] text-muted-foreground font-normal">
+                        {s.start_time?.slice(0,5)} – {s.end_time?.slice(0,5)}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Skip days */}
@@ -1187,16 +1731,37 @@ function ShiftSwapsTab() {
 
 // ─── Payroll Tab ──────────────────────────────────────────────
 function PayrollTab() {
+  const { user } = useAuth();
+  const isOwner = user?.role === 'owner' || user?.role === 'admin' || user?.email?.toLowerCase().startsWith('owner@') || user?.username?.toLowerCase().includes('owner');
   const toast = useToast();
   const [month, setMonth] = useState(THIS_MONTH);
   const { data, loading, refetch } = useFetch(`/hr/payroll?month=${month}`);
   const payroll = data?.payroll || [];
   const [generating, setGenerating] = useState(false);
-  const [editId, setEditId] = useState(null);
-  const [editForm, setEditForm] = useState({ deductions: 0, bonus: 0, notes: '' });
+  const [editItem, setEditItem] = useState(null);
+  const [editForm, setEditForm] = useState({
+    base_salary: 0,
+    overtime_hours: 0,
+    overtime_pay: 0,
+    bonus: 0,
+    deductions: 0,
+    notes: ''
+  });
+
+  const openEdit = (p) => {
+    setEditItem(p);
+    setEditForm({
+      base_salary: p.base_salary || 0,
+      overtime_hours: p.overtime_hours || 0,
+      overtime_pay: p.overtime_pay || 0,
+      bonus: p.bonus || 0,
+      deductions: p.deductions || 0,
+      notes: p.notes || ''
+    });
+  };
 
   const handleGenerate = async () => {
-    if (!confirm(`Generate slip gaji untuk ${month}? Karyawan yang sudah ada slip akan di-skip.`)) return;
+    if (!confirm(`Generate / sinkronkan slip gaji untuk periode ${month}?\n\n• Slip berstatus Draft akan otomatis dihitung ulang sesuai absensi & lembur terbaru.\n• Karyawan baru yang belum ada slip akan dibuatkan otomatis.`)) return;
     setGenerating(true);
     try {
       const res = await api.post('/hr/payroll/generate', { month });
@@ -1215,12 +1780,31 @@ function PayrollTab() {
     } catch (err) { toast.error(err.response?.data?.error || 'Gagal'); }
   };
 
-  const handleSaveEdit = async () => {
+  const handleUnpay = async (id, name) => {
+    if (!confirm(`Batalkan status bayar untuk gaji "${name}"?\n\nStatus slip akan kembali ke "Draft" dan catatan pengeluaran kas terkait akan otomatis dihapus.`)) return;
     try {
-      await api.put(`/hr/payroll/${editId}`, editForm);
-      toast.success('Slip gaji diperbarui');
-      setEditId(null); refetch();
-    } catch (err) { toast.error(err.response?.data?.error || 'Gagal'); }
+      const res = await api.post(`/hr/payroll/${id}/unpay`);
+      toast.success(res.data.message || 'Pembayaran berhasil dibatalkan');
+      refetch();
+    } catch (err) { toast.error(err.response?.data?.error || 'Gagal membatalkan pembayaran'); }
+  };
+
+  const handleRecalculate = async (id, name) => {
+    try {
+      const res = await api.post(`/hr/payroll/${id}/recalculate`);
+      toast.success(res.data.message || `Slip ${name} berhasil dihitung ulang`);
+      refetch();
+    } catch (err) { toast.error(err.response?.data?.error || 'Gagal hitung ulang'); }
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editItem) return;
+    try {
+      await api.put(`/hr/payroll/${editItem.id}`, editForm);
+      toast.success('Slip gaji berhasil diperbarui');
+      setEditItem(null);
+      refetch();
+    } catch (err) { toast.error(err.response?.data?.error || 'Gagal menyimpan'); }
   };
 
   const totalNet = payroll.reduce((s, p) => s + parseFloat(p.net_salary || 0), 0);
@@ -1281,13 +1865,58 @@ function PayrollTab() {
                     </TableCell>
                     <TableCell><span className={cn('text-[10px] font-semibold px-2 py-1 rounded-full', sc.color)}>{sc.label}</span></TableCell>
                     <TableCell>
-                      <div className="flex gap-1">
-                        {p.status !== 'paid' && (
+                      <div className="flex items-center gap-1">
+                        {p.status === 'paid' ? (
                           <>
-                            <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => { setEditId(p.id); setEditForm({ deductions: p.deductions || 0, bonus: p.bonus || 0, notes: p.notes || '' }); }}>
-                              <Pencil className="w-3 h-3" />
+                            {isOwner && (
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  title="Edit Slip Gaji (Owner)"
+                                  className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                                  onClick={() => openEdit(p)}
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  title="Batalkan Pembayaran (Kembali ke Draft)"
+                                  className="h-7 px-2 text-xs text-amber-600 border-amber-200 hover:bg-amber-50 gap-1"
+                                  onClick={() => handleUnpay(p.id, p.full_name)}
+                                >
+                                  <RotateCcw className="w-3 h-3" />
+                                  <span>Batal Bayar</span>
+                                </Button>
+                              </>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              title="Edit Slip Gaji"
+                              className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                              onClick={() => openEdit(p)}
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
                             </Button>
-                            <Button size="sm" className="h-7 px-2 text-xs bg-emerald-600 hover:bg-emerald-700" onClick={() => handlePay(p.id, p.full_name)}>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              title="Hitung Ulang Absensi & Lembur"
+                              className="h-7 w-7 p-0 text-muted-foreground hover:text-primary"
+                              onClick={() => handleRecalculate(p.id, p.full_name)}
+                            >
+                              <RefreshCcw className="w-3 h-3" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              className="h-7 px-2.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium"
+                              onClick={() => handlePay(p.id, p.full_name)}
+                            >
                               Bayar
                             </Button>
                           </>
@@ -1304,27 +1933,143 @@ function PayrollTab() {
       </Card>
 
       {/* Edit payroll dialog */}
-      <Dialog open={!!editId} onOpenChange={() => setEditId(null)}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Sesuaikan Slip Gaji</DialogTitle></DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">Bonus (Rp)</label>
-              <Input type="number" value={editForm.bonus} onChange={e=>setEditForm(f=>({...f,bonus:e.target.value}))} className="mt-1" />
+      <Dialog open={!!editItem} onOpenChange={(open) => { if (!open) setEditItem(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center justify-between">
+              <span>Edit Slip Gaji</span>
+              {editItem?.status === 'paid' && (
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
+                  Dibayar
+                </span>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+
+          {editItem && (
+            <div className="space-y-4 text-xs">
+              <div className="bg-muted/40 p-2.5 rounded-lg flex items-center justify-between">
+                <div>
+                  <p className="font-semibold text-sm text-foreground">{editItem.full_name}</p>
+                  <p className="text-[11px] text-muted-foreground">{editItem.department} · {editItem.position} · Periode {editItem.period_month}</p>
+                </div>
+                {editItem.status === 'paid' && isOwner && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 px-2 text-xs text-amber-600 border-amber-200 hover:bg-amber-50 gap-1"
+                    onClick={() => {
+                      const targetId = editItem.id;
+                      const targetName = editItem.full_name;
+                      setEditItem(null);
+                      handleUnpay(targetId, targetName);
+                    }}
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    Batal Bayar
+                  </Button>
+                )}
+              </div>
+
+              {editItem.status === 'paid' && (
+                <div className="p-2.5 rounded-md bg-amber-50 border border-amber-200 text-amber-800 text-[11px] leading-relaxed">
+                  ⚠️ <strong>Perhatian Akun Owner:</strong> Slip gaji ini sudah berstatus <em>Dibayar</em>. Menyimpan perubahan nominal akan otomatis menyesuaikan catatan pengeluaran kas.
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-medium text-muted-foreground">Gaji Pokok (Rp)</label>
+                  <Input
+                    type="number"
+                    value={editForm.base_salary}
+                    onChange={e => setEditForm(f => ({ ...f, base_salary: e.target.value }))}
+                    className="mt-1 h-8"
+                  />
+                </div>
+                <div>
+                  <label className="font-medium text-muted-foreground">Jam Lembur (jam)</label>
+                  <Input
+                    type="number"
+                    step="0.5"
+                    value={editForm.overtime_hours}
+                    onChange={e => setEditForm(f => ({ ...f, overtime_hours: e.target.value }))}
+                    className="mt-1 h-8"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-medium text-muted-foreground">Uang Lembur (Rp)</label>
+                  <Input
+                    type="number"
+                    value={editForm.overtime_pay}
+                    onChange={e => setEditForm(f => ({ ...f, overtime_pay: e.target.value }))}
+                    className="mt-1 h-8"
+                  />
+                </div>
+                <div>
+                  <label className="font-medium text-muted-foreground">Bonus (Rp)</label>
+                  <Input
+                    type="number"
+                    value={editForm.bonus}
+                    onChange={e => setEditForm(f => ({ ...f, bonus: e.target.value }))}
+                    className="mt-1 h-8"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="font-medium text-muted-foreground">Potongan (Rp)</label>
+                <Input
+                  type="number"
+                  value={editForm.deductions}
+                  onChange={e => setEditForm(f => ({ ...f, deductions: e.target.value }))}
+                  className="mt-1 h-8"
+                />
+              </div>
+
+              {/* Calculation summary preview */}
+              <div className="p-3 bg-muted/60 rounded-lg space-y-1.5 border">
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Gaji Pokok + Lembur:</span>
+                  <span>{FMT_RP(Number(editForm.base_salary || 0) + Number(editForm.overtime_pay || 0))}</span>
+                </div>
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Bonus (+):</span>
+                  <span className="text-emerald-600">+{FMT_RP(editForm.bonus || 0)}</span>
+                </div>
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Potongan (-):</span>
+                  <span className="text-red-500">-{FMT_RP(editForm.deductions || 0)}</span>
+                </div>
+                <div className="border-t pt-1.5 flex justify-between font-bold text-sm text-foreground">
+                  <span>Total Gaji Bersih:</span>
+                  <span className="text-emerald-600 font-extrabold">
+                    {FMT_RP(
+                      (Number(editForm.base_salary || 0) + Number(editForm.overtime_pay || 0) + Number(editForm.bonus || 0)) - Number(editForm.deductions || 0)
+                    )}
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <label className="font-medium text-muted-foreground">Catatan / Keterangan</label>
+                <Input
+                  value={editForm.notes}
+                  onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))}
+                  placeholder="Keterangan penyesuaian gaji..."
+                  className="mt-1 h-8"
+                />
+              </div>
+
+              <div className="flex gap-2 justify-end pt-2">
+                <Button variant="outline" size="sm" onClick={() => setEditItem(null)}>Batal</Button>
+                <Button size="sm" onClick={handleSaveEdit}>Simpan Perubahan</Button>
+              </div>
             </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">Potongan (Rp)</label>
-              <Input type="number" value={editForm.deductions} onChange={e=>setEditForm(f=>({...f,deductions:e.target.value}))} className="mt-1" />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">Catatan</label>
-              <Input value={editForm.notes} onChange={e=>setEditForm(f=>({...f,notes:e.target.value}))} className="mt-1" />
-            </div>
-            <div className="flex gap-2 justify-end">
-              <Button variant="outline" onClick={() => setEditId(null)}>Batal</Button>
-              <Button onClick={handleSaveEdit}>Simpan</Button>
-            </div>
-          </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
@@ -1702,6 +2447,427 @@ function EmployeeKPITab() {
           </CardContent>
         </Card>
       )}
+    </div>
+  );
+}
+
+// ─── OVERTIME TAB ─────────────────────────────────────────────
+function OvertimeTab() {
+  const toast = useToast();
+  const [month, setMonth] = useState(THIS_MONTH);
+  const [employeeId, setEmployeeId] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showStats, setShowStats] = useState(() => {
+    const saved = localStorage.getItem('hr_show_overtime_stats');
+    return saved !== null ? saved === 'true' : true;
+  });
+
+  const { data: empData } = useFetch('/hr/employees?status=active');
+  const employees = empData?.employees || [];
+
+  const { data, loading, refetch } = useFetch(
+    `/hr/overtime?month=${month}${employeeId ? `&employee_id=${employeeId}` : ''}${statusFilter !== 'all' ? `&status=${statusFilter}` : ''}${searchQuery ? `&search=${encodeURIComponent(searchQuery)}` : ''}`
+  );
+  const list = data?.overtime || [];
+  const filtered = list;
+
+  // Summary Metrics
+  const totalHours = list.reduce((s, o) => s + parseFloat(o.total_hours || 0), 0);
+  const totalPayApproved = list
+    .filter(o => o.status === 'approved')
+    .reduce((s, o) => s + parseFloat(o.total_pay || 0), 0);
+  const pendingCount = list.filter(o => o.status === 'pending').length;
+  const approvedCount = list.filter(o => o.status === 'approved').length;
+
+  // Add / Edit Dialog state
+  const [formOpen, setFormOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState(null);
+  const [form, setForm] = useState({
+    employee_id: '',
+    overtime_date: TODAY,
+    start_time: '18:00',
+    end_time: '21:00',
+    rate_per_hour: 25000,
+    reason: '',
+  });
+  const [saving, setSaving] = useState(false);
+
+  // Auto calculate total hours and estimated pay in form
+  const calcHours = (s, e) => {
+    if (!s || !e) return 0;
+    const diff = (new Date(`2000-01-01T${e}`) - new Date(`2000-01-01T${s}`)) / 3600000;
+    return diff > 0 ? parseFloat(diff.toFixed(2)) : 0;
+  };
+  const currentTotalHours = calcHours(form.start_time, form.end_time);
+  const currentTotalPay = Math.round(currentTotalHours * (parseFloat(form.rate_per_hour) || 0));
+
+  const openAdd = () => {
+    setEditingItem(null);
+    const firstEmp = employees[0];
+    setForm({
+      employee_id: firstEmp ? String(firstEmp.id) : '',
+      overtime_date: TODAY,
+      start_time: '18:00',
+      end_time: '21:00',
+      rate_per_hour: firstEmp?.hourly_rate ? Math.round(firstEmp.hourly_rate * 1.5) : 25000,
+      reason: '',
+    });
+    setFormOpen(true);
+  };
+
+  const openEdit = (item) => {
+    setEditingItem(item);
+    setForm({
+      employee_id: String(item.employee_id),
+      overtime_date: item.overtime_date?.slice(0, 10),
+      start_time: item.start_time?.slice(0, 5),
+      end_time: item.end_time?.slice(0, 5),
+      rate_per_hour: item.rate_per_hour,
+      reason: item.reason || '',
+    });
+    setFormOpen(true);
+  };
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    if (!form.employee_id) return toast.warning('Pilih karyawan');
+    setSaving(true);
+    try {
+      if (editingItem) {
+        await api.put(`/hr/overtime/${editingItem.id}`, {
+          start_time: form.start_time,
+          end_time: form.end_time,
+          rate_per_hour: form.rate_per_hour,
+          reason: form.reason,
+        });
+        toast.success('Pengajuan lembur diperbarui');
+      } else {
+        await api.post('/hr/overtime', form);
+        toast.success('Pengajuan lembur berhasil ditambahkan');
+      }
+      setFormOpen(false);
+      refetch();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Gagal menyimpan lembur');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleStatusChange = async (id, newStatus) => {
+    try {
+      await api.put(`/hr/overtime/${id}`, { status: newStatus });
+      toast.success(`Lembur ${newStatus === 'approved' ? 'disetujui' : 'ditolak'}`);
+      refetch();
+    } catch (err) {
+      toast.error('Gagal memperbarui status');
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm('Hapus data lembur ini?')) return;
+    try {
+      await api.delete(`/hr/overtime/${id}`);
+      toast.success('Data lembur dihapus');
+      refetch();
+    } catch (err) {
+      toast.error('Gagal menghapus lembur');
+    }
+  };
+
+  const STATUS_BADGE = {
+    pending: <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-xs">Menunggu</Badge>,
+    approved: <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-xs">Disetujui</Badge>,
+    rejected: <Badge className="bg-rose-100 text-rose-800 border-rose-200 text-xs">Ditolak</Badge>,
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Summary Cards (Collapsible) */}
+      <div className={cn(
+        "transition-all duration-300 ease-in-out overflow-hidden",
+        showStats ? "max-h-[300px] opacity-100" : "max-h-0 opacity-0 pointer-events-none"
+      )}>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <SummaryCard icon={Timer} label="Total Jam Lembur" value={`${totalHours.toFixed(1)} Jam`} color="violet" />
+          <SummaryCard icon={CreditCard} label="Total Biaya Disetujui" value={FMT_RP(totalPayApproved)} color="emerald" />
+          <SummaryCard icon={Clock} label="Menunggu Persetujuan" value={pendingCount} color="amber" badge={pendingCount > 0 ? "Perlu Review" : undefined} />
+          <SummaryCard icon={Check} label="Lembur Disetujui" value={approvedCount} color="blue" />
+        </div>
+      </div>
+
+      {/* Controls & Filters */}
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-muted/20 p-3 rounded-xl border">
+        <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
+          <Input
+            type="month"
+            value={month}
+            onChange={e => setMonth(e.target.value)}
+            className="h-8 text-xs w-36"
+          />
+          <div className="relative">
+            <Search className="w-3.5 h-3.5 text-muted-foreground absolute left-2.5 top-2.5 pointer-events-none" />
+            <Input
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Cari karyawan / alasan..."
+              className="h-8 text-xs pl-8 w-44"
+            />
+          </div>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="h-8 text-xs w-36">
+              <SelectValue placeholder="Semua Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Semua Status</SelectItem>
+              <SelectItem value="pending">Menunggu</SelectItem>
+              <SelectItem value="approved">Disetujui</SelectItem>
+              <SelectItem value="rejected">Ditolak</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowStats(prev => {
+              const next = !prev;
+              localStorage.setItem('hr_show_overtime_stats', String(next));
+              return next;
+            })}
+            className="h-8 text-xs flex items-center gap-1.5"
+            title={showStats ? "Sembunyikan kartu statistik lembur" : "Tampilkan kartu statistik lembur"}
+          >
+            {showStats ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            <span>{showStats ? 'Sembunyikan Card' : 'Tampilkan Card'}</span>
+          </Button>
+        </div>
+
+        <Button size="sm" onClick={openAdd} className="gap-1.5 w-full sm:w-auto bg-violet-600 hover:bg-violet-700">
+          <Plus className="w-4 h-4" /> Pengajuan Lembur
+        </Button>
+      </div>
+
+      {/* Overtime List Table */}
+      <Card>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="text-xs">Tanggal</TableHead>
+                <TableHead className="text-xs">Karyawan</TableHead>
+                <TableHead className="text-xs">Waktu</TableHead>
+                <TableHead className="text-xs text-center">Durasi</TableHead>
+                <TableHead className="text-xs text-right">Tarif/Jam</TableHead>
+                <TableHead className="text-xs text-right">Total Upah</TableHead>
+                <TableHead className="text-xs">Keperluan / Alasan</TableHead>
+                <TableHead className="text-xs text-center">Status</TableHead>
+                <TableHead className="text-xs text-right">Aksi</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading && (
+                <TableRow>
+                  <TableCell colSpan={9} className="text-center py-10">
+                    <Loader2 className="w-6 h-6 animate-spin mx-auto text-violet-500" />
+                  </TableCell>
+                </TableRow>
+              )}
+              {!loading && !filtered.length && (
+                <TableRow>
+                  <TableCell colSpan={9} className="text-center py-10 text-muted-foreground text-xs">
+                    Tidak ada data lembur untuk periode ini
+                  </TableCell>
+                </TableRow>
+              )}
+              {!loading && filtered.map(o => (
+                <TableRow key={o.id}>
+                  <TableCell className="text-xs font-medium whitespace-nowrap">
+                    {FMT_DATE(o.overtime_date)}
+                  </TableCell>
+                  <TableCell className="text-xs">
+                    <p className="font-semibold leading-tight">{o.full_name}</p>
+                    <p className="text-[10px] text-muted-foreground">{o.employee_code} · {o.department || 'Umum'}</p>
+                  </TableCell>
+                  <TableCell className="text-xs whitespace-nowrap font-mono text-muted-foreground">
+                    {o.start_time?.slice(0, 5)} - {o.end_time?.slice(0, 5)}
+                  </TableCell>
+                  <TableCell className="text-xs font-semibold text-center whitespace-nowrap">
+                    {o.total_hours} Jam
+                  </TableCell>
+                  <TableCell className="text-xs text-right whitespace-nowrap text-muted-foreground">
+                    {FMT_RP(o.rate_per_hour)}
+                  </TableCell>
+                  <TableCell className="text-xs text-right whitespace-nowrap font-bold text-violet-600">
+                    {FMT_RP(o.total_pay)}
+                  </TableCell>
+                  <TableCell className="text-xs max-w-44 truncate text-muted-foreground">
+                    {o.reason || '—'}
+                  </TableCell>
+                  <TableCell className="text-center whitespace-nowrap">
+                    {STATUS_BADGE[o.status] || o.status}
+                  </TableCell>
+                  <TableCell className="text-right whitespace-nowrap">
+                    <div className="flex items-center justify-end gap-1">
+                      {o.status === 'pending' && (
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+                            title="Setujui"
+                            onClick={() => handleStatusChange(o.id, 'approved')}
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-rose-600 hover:text-rose-700 hover:bg-rose-50"
+                            title="Tolak"
+                            onClick={() => handleStatusChange(o.id, 'rejected')}
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </Button>
+                        </>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        title="Edit"
+                        onClick={() => openEdit(o)}
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-destructive hover:bg-destructive/10"
+                        title="Hapus"
+                        onClick={() => handleDelete(o.id)}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      {/* Add / Edit Dialog */}
+      <Dialog open={formOpen} onOpenChange={setFormOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold flex items-center gap-2">
+              <Timer className="w-5 h-5 text-violet-600" />
+              {editingItem ? 'Edit Data Lembur' : 'Tambah Pengajuan Lembur'}
+            </DialogTitle>
+          </DialogHeader>
+
+          <form onSubmit={handleSave} className="space-y-4 py-2">
+            <div>
+              <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                Karyawan * <span className="text-[10px] font-normal text-violet-600 dark:text-violet-400">(Pencarian Server-Side)</span>
+              </label>
+              <SearchableEmployeeSelect
+                value={form.employee_id}
+                disabled={!!editingItem}
+                onChange={v => setForm(f => ({ ...f, employee_id: v }))}
+                onSelectEmployee={emp => {
+                  const rate = emp?.hourly_rate ? Math.round(emp.hourly_rate * 1.5) : 25000;
+                  setForm(f => ({
+                    ...f,
+                    employee_id: String(emp.id),
+                    rate_per_hour: rate
+                  }));
+                }}
+                placeholder="Ketik nama karyawan atau bagian..."
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">Tanggal Lembur *</label>
+              <Input
+                type="date"
+                value={form.overtime_date}
+                onChange={e => setForm(f => ({ ...f, overtime_date: e.target.value }))}
+                required
+                disabled={!!editingItem}
+                className="text-xs"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground block mb-1">Jam Mulai</label>
+                <Input
+                  type="time"
+                  value={form.start_time}
+                  onChange={e => setForm(f => ({ ...f, start_time: e.target.value }))}
+                  required
+                  className="text-xs"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground block mb-1">Jam Selesai</label>
+                <Input
+                  type="time"
+                  value={form.end_time}
+                  onChange={e => setForm(f => ({ ...f, end_time: e.target.value }))}
+                  required
+                  className="text-xs"
+                />
+              </div>
+            </div>
+
+            {/* Calculations Preview */}
+            <div className="grid grid-cols-2 gap-3 p-3 rounded-xl bg-violet-50/50 border border-violet-100 text-xs">
+              <div>
+                <span className="text-muted-foreground block">Durasi Lembur:</span>
+                <span className="font-bold text-violet-700 text-sm">{currentTotalHours} Jam</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground block">Estimasi Upah:</span>
+                <span className="font-bold text-emerald-700 text-sm">{FMT_RP(currentTotalPay)}</span>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">Tarif Lembur per Jam (Rp)</label>
+              <Input
+                type="number"
+                value={form.rate_per_hour}
+                onChange={e => setForm(f => ({ ...f, rate_per_hour: e.target.value }))}
+                className="text-xs font-mono"
+              />
+              <p className="text-[10px] text-muted-foreground mt-0.5">Dihitung dari 1.5x upah per jam karyawan.</p>
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">Keperluan / Alasan</label>
+              <Input
+                placeholder="Contoh: Event Gathering, Closing Bulanan, Backup Shift..."
+                value={form.reason}
+                onChange={e => setForm(f => ({ ...f, reason: e.target.value }))}
+                className="text-xs"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t">
+              <Button size="sm" variant="ghost" type="button" onClick={() => setFormOpen(false)}>
+                Batal
+              </Button>
+              <Button size="sm" type="submit" disabled={saving} className="bg-violet-600 hover:bg-violet-700">
+                {saving ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
+                {editingItem ? 'Simpan Perubahan' : 'Ajukan Lembur'}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useFetch } from '../hooks/useApi';
 import { useAuth } from '../context/AuthContext';
+import { useGlobalBranch } from '../context/BranchContext';
 import { useShiftGuard } from '../hooks/useShiftGuard';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';

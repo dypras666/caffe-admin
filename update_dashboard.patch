@@ -1,0 +1,58 @@
+--- ../cafe-backend/routes/dashboard.js
++++ ../cafe-backend/routes/dashboard.js
+@@ -19,6 +19,8 @@
+         [totalProducts],
+         [ordersByStatus],
+         [revenueLast7Days],
++        [recentOrders],
++        [topProducts]
+       ] = await Promise.all([
+         // Total orders today (scoped to branch)
+         db.query(
+@@ -35,11 +37,11 @@
+           [today, ...branchParam]
+         ),
+ 
+-        // Total pending bookings (scoped to branch)
++        // Total pending bookings and preorder (scoped to branch)
+         db.query(
+           `SELECT COUNT(*) AS total_bookings_pending
+-           FROM bookings
+-           WHERE status = 'pending'${branchWhere}`,
++           FROM orders
++           WHERE order_type IN ('booking', 'preorder') AND order_status != 'cancelled' AND service_status = 'pending'${branchWhere}`,
+           [...branchParam]
+         ),
+ 
+@@ -75,6 +77,21 @@
+            ORDER BY date ASC`,
+           [...branchParam]
+         ),
++        
++        // Recent Orders
++        db.query(
++          `SELECT id, order_number, customer_name, order_type, total, payment_status, order_status, created_at FROM orders WHERE 1=1 ${branchWhere} ORDER BY id DESC LIMIT 5`,
++          [...branchParam]
++        ),
++        
++        // Top Products
++        db.query(
++          `SELECT oi.product_name, SUM(oi.quantity) as sold, p.image_url 
++           FROM order_items oi 
++           JOIN orders o ON o.id = oi.order_id 
++           LEFT JOIN products p ON p.id = oi.product_id 
++           WHERE o.order_status != 'cancelled' ${branchWhere.replace('branch_id', 'o.branch_id')} GROUP BY oi.product_name, p.image_url ORDER BY sold DESC LIMIT 5`,
++          [...branchParam]
++        )
+       ]);
+ 
+       res.json({
+@@ -84,6 +101,8 @@
+         total_products: totalProducts[0].total_products,
+         orders_by_status: ordersByStatus,
+         revenue_last_7_days: revenueLast7Days,
++        recent_orders: recentOrders,
++        top_products: topProducts,
+         branch_id,
+       });
+     } catch (error) {

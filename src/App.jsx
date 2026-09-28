@@ -44,6 +44,7 @@ import RolesPage from './pages/RolesPage';
 import VouchersPage from './pages/VouchersPage';
 import BackupPage from './pages/BackupPage';
 import NavigationPage from './pages/NavigationPage';
+import AttendanceKioskPage from './pages/AttendanceKioskPage';
 
 function RequireAuth({ children }) {
   const { user, loading } = useAuth();
@@ -107,6 +108,9 @@ function AppRoutes() {
         <Route path="reports" element={<RequireAdmin><ReportsPage /></RequireAdmin>} />
         <Route path="shift" element={<ShiftPage />} />
         <Route path="hr" element={<RequireAdmin><HRPage defaultTab="employees" /></RequireAdmin>} />
+        <Route path="hr/schedule" element={<RequireAdmin><HRPage defaultTab="schedule" /></RequireAdmin>} />
+        <Route path="hr/overtime" element={<RequireAdmin><HRPage defaultTab="overtime" /></RequireAdmin>} />
+        <Route path="hr/lembur" element={<RequireAdmin><HRPage defaultTab="overtime" /></RequireAdmin>} />
         <Route path="hr/kpi" element={<RequireAdmin><HRPage defaultTab="kpi" /></RequireAdmin>} />
         <Route path="posts" element={<RequireAdmin><PostsPage /></RequireAdmin>} />
         <Route path="roles" element={<RequireAdmin><RolesPage /></RequireAdmin>} />
@@ -114,6 +118,9 @@ function AppRoutes() {
         <Route path="backup" element={<RequireAdmin><BackupPage /></RequireAdmin>} />
         <Route path="navigation" element={<RequireAdmin><NavigationPage /></RequireAdmin>} />
       </Route>
+      {/* Kiosk Terminal (Requires Login, Any Role Can Access) */}
+      <Route path="/kiosk" element={<RequireAuth><AttendanceKioskPage /></RequireAuth>} />
+      <Route path="/absensi" element={<RequireAuth><AttendanceKioskPage /></RequireAuth>} />
       <Route path="/display/:stationCode" element={<RequireAuth><StationDisplayPage /></RequireAuth>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
