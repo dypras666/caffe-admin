@@ -59,7 +59,7 @@ export default function DashboardPage() {
     const rawDate = d.date;
     const dateObj = new Date(rawDate);
     const formatted = isNaN(dateObj) ? rawDate : dateObj.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
-    return { ...d, date: formatted };
+    return { ...d, date: formatted, revenue: parseFloat(d.revenue || 0) };
   });
   const topProducts = stats.top_products || [];
 

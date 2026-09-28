@@ -38,7 +38,10 @@ export default function MediaPage() {
 
   const getShareUrl = (f) => {
     if (!f) return '';
-    return `${window.location.origin}/m/${f.file_path || f.original_name}`;
+    const target = f.url || f.file_path || f.original_name || '';
+    if (target.startsWith('http://') || target.startsWith('https://')) return target;
+    const cleanPath = target.startsWith('/') ? target : `/${target}`;
+    return `${window.location.origin}${cleanPath}`;
   };
 
   const files = data?.files || data?.media || [];

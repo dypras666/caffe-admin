@@ -14,6 +14,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/
 import { Input } from '../components/ui/input';
 import { useToast } from '../components/ui/toast';
 import { cn } from '../lib/utils';
+import {
+  loadFaceModels,
+  detectFace,
+  computeFaceDistance,
+  parseDescriptor,
+  matchEmployeeFace,
+  extractDescriptorFromPhoto
+} from '../lib/faceBiometrics';
 
 // ─── THEME ACCENT PALETTES ──────────────────────────────────────────
 export const THEME_CONFIG = {
@@ -902,7 +910,50 @@ function FaceRecognitionSection({ employees, onEmployeeIdentified, onOpenRegiste
   const [cameraError, setCameraError] = useState(null);
   const [scanning, setScanning] = useState(false);
   const [matchedEmp, setMatchedEmp] = useState(null);
-  const [faceDetectionStatus, setFaceDetectionStatus] = useState('Standby');
+  const [faceDetectionStatus, setFaceDetectionStatus] = useState('Memuat modul AI Biometrik...');
+  const [cachedEmployees, setCachedEmployees] = useState([]);
+  const [modelsReady, setModelsReady] = useState(false);
+
+  // Preload face models and extract missing descriptors
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      setFaceDetectionStatus('Memuat modul AI Biometrik...');
+      const ok = await loadFaceModels();
+      if (!isMounted) return;
+      if (ok) {
+        setModelsReady(true);
+        setFaceDetectionStatus('Siap memindai wajah');
+      } else {
+        setFaceDetectionStatus('Modul AI Biometrik gagal dimuat');
+      }
+
+      // Pre-process enrolled employee descriptors
+      const enrolled = (employees || []).filter(e => e.face_photo || e.face_descriptor);
+      const processed = await Promise.all(
+        enrolled.map(async (emp) => {
+          let desc = parseDescriptor(emp.face_descriptor);
+          if (!desc && emp.face_photo) {
+            try {
+              const extracted = await extractDescriptorFromPhoto(emp.face_photo);
+              if (extracted) {
+                desc = new Float32Array(extracted);
+                axios.post('/api/kiosk/register-face', {
+                  employee_id: emp.id,
+                  face_descriptor: extracted
+                }).catch(() => {});
+              }
+            } catch (_) {}
+          }
+          return { ...emp, _descriptor: desc };
+        })
+      );
+      if (isMounted) {
+        setCachedEmployees(processed);
+      }
+    })();
+    return () => { isMounted = false; };
+  }, [employees]);
 
   // Start webcam
   const startCamera = async () => {
@@ -945,43 +996,49 @@ function FaceRecognitionSection({ employees, onEmployeeIdentified, onOpenRegiste
 
   // Trigger Face Scan & Match
   const handleScanFace = async () => {
+    if (!videoRef.current || scanning) return;
     setScanning(true);
-    setFaceDetectionStatus('Mendeteksi wajah...');
+    setFaceDetectionStatus('Mendeteksi wajah di kamera...');
 
     try {
       const snap = captureFrame();
       if (!snap) throw new Error('Gagal mengambil gambar kamera');
 
-      // Check if browser has native FaceDetector
-      let hasFace = true;
-      if (window.FaceDetector) {
-        try {
-          const detector = new window.FaceDetector({ fastMode: true, maxDetectedFaces: 1 });
-          const faces = await detector.detect(videoRef.current);
-          hasFace = faces.length > 0;
-        } catch (_) {}
+      // 1. Real Face Detection
+      const detection = await detectFace(videoRef.current);
+      if (!detection) {
+        playChime('error');
+        setFaceDetectionStatus('Wajah tidak terdeteksi! Posisikan wajah di dalam kotak.');
+        return;
       }
 
-      setFaceDetectionStatus('Mencocokkan data karyawan...');
+      setFaceDetectionStatus('Menganalisis biometrik wajah...');
 
-      // Find employees with registered face_photo or face_descriptor
-      const enrolled = employees.filter(e => e.face_photo || e.face_descriptor);
-      
+      // 2. Get enrolled employees with descriptors
+      const enrolled = cachedEmployees.filter(e => e._descriptor || e.face_descriptor);
       if (!enrolled.length) {
         playChime('error');
         setFaceDetectionStatus('Belum ada wajah karyawan yang terdaftar');
         return;
       }
 
-      // Match enrolled user
-      const matched = enrolled[0];
-      setMatchedEmp(matched);
-      playChime('success');
-      setFaceDetectionStatus(`Wajah Terverifikasi: ${matched.full_name}`);
-      onEmployeeIdentified(matched, snap);
+      // 3. Match against all enrolled employees
+      const matchResult = matchEmployeeFace(detection.descriptor, enrolled, 0.52);
+
+      if (matchResult && matchResult.employee) {
+        const { employee, confidence } = matchResult;
+        setMatchedEmp(employee);
+        playChime('success');
+        setFaceDetectionStatus(`Wajah Terverifikasi: ${employee.full_name} (${confidence}%)`);
+        onEmployeeIdentified(employee, snap);
+      } else {
+        playChime('error');
+        setFaceDetectionStatus('Wajah tidak cocok dengan data karyawan terdaftar');
+      }
     } catch (e) {
+      console.error('Face match error:', e);
       playChime('error');
-      setFaceDetectionStatus('Wajah tidak dikenali atau di luar jangkauan');
+      setFaceDetectionStatus('Gagal memproses verifikasi biometrik');
     } finally {
       setScanning(false);
     }
@@ -1590,11 +1647,20 @@ function KioskSearchableEmployeeSelect({ employees, value, onChange }) {
 // ─── SUBCOMPONENT: FACE REGISTRATION MODAL ─────────────────────────
 // ─── SUBCOMPONENT: FACE REGISTRATION MODAL ─────────────────────────
 function FaceRegisterModal({ employees, currentTheme, onClose, onSuccess }) {
+  const toast = useToast();
   const videoRef = useRef(null);
   const [selectedId, setSelectedId] = useState(employees[0]?.id || '');
   const [pinCode, setPinCode] = useState('');
-  const [capturedPhoto, setCapturedPhoto] = useState(null);
+  const [takes, setTakes] = useState([]); // [{ photo, descriptor, title }]
+  const [detecting, setDetecting] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [statusMsg, setStatusMsg] = useState('Posisikan wajah Anda tegak lurus di dalam kotak.');
+
+  const STEPS = [
+    { title: 'Take 1: Hadap Lurus Depan', tip: 'Tatap kamera lurus dengan ekspresi wajar' },
+    { title: 'Take 2: Sedikit Miring Kiri / Senyum', tip: 'Miringkan kepala sedikit ke kiri atau tersenyum alami' },
+    { title: 'Take 3: Sedikit Miring Kanan', tip: 'Miringkan kepala sedikit ke kanan untuk variasi sudut' }
+  ];
 
   useEffect(() => {
     let stream = null;
@@ -1608,33 +1674,96 @@ function FaceRegisterModal({ employees, currentTheme, onClose, onSuccess }) {
       })
       .catch(err => console.error('Reg camera err:', err));
 
+    loadFaceModels();
+
     return () => {
       if (stream) stream.getTracks().forEach(t => t.stop());
     };
   }, []);
 
-  const handleCapture = () => {
-    if (!videoRef.current) return;
-    const canvas = document.createElement('canvas');
-    canvas.width = 320;
-    canvas.height = 320;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(videoRef.current, 0, 0, 320, 320);
-    setCapturedPhoto(canvas.toDataURL('image/jpeg', 0.8));
+  const handleCaptureSample = async () => {
+    if (!videoRef.current || detecting) return;
+    setDetecting(true);
+    setStatusMsg('Menganalisis wajah dengan AI Biometrik...');
+
+    try {
+      const detection = await detectFace(videoRef.current);
+      if (!detection) {
+        setStatusMsg('Wajah tidak terdeteksi! Pastikan wajah Anda terlihat jelas di dalam kotak.');
+        toast.error('Wajah tidak terdeteksi! Posisikan wajah tegak lurus di depan kamera.');
+        return;
+      }
+
+      // Capture frame
+      const canvas = document.createElement('canvas');
+      canvas.width = 360;
+      canvas.height = 360;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(videoRef.current, 0, 0, 360, 360);
+      const photo = canvas.toDataURL('image/jpeg', 0.85);
+
+      const nextTakes = [...takes, {
+        photo,
+        descriptor: Array.from(detection.descriptor),
+        title: STEPS[takes.length]?.title || `Take ${takes.length + 1}`
+      }];
+      setTakes(nextTakes);
+
+      if (nextTakes.length < 3) {
+        setStatusMsg(`Take ${nextTakes.length}/3 berhasil! Lanjut ke ${STEPS[nextTakes.length]?.title}.`);
+        toast.success(`Foto ${nextTakes.length}/3 berhasil divalidasi!`);
+      } else {
+        setStatusMsg('3 Referensi Biometrik Wajah lengkap & siap disimpan!');
+        toast.success('3 Referensi Wajah lengkap terverifikasi AI!');
+      }
+    } catch (err) {
+      console.error('Capture error:', err);
+      toast.error('Gagal memproses sampel wajah');
+    } finally {
+      setDetecting(false);
+    }
+  };
+
+  const handleResetTakes = () => {
+    setTakes([]);
+    setStatusMsg('Posisikan wajah Anda tegak lurus di dalam kotak.');
   };
 
   const handleSave = async () => {
-    if (!selectedId) return;
+    if (!selectedId) {
+      toast.error('Pilih karyawan terlebih dahulu');
+      return;
+    }
+    if (!takes.length) {
+      toast.error('Ambil minimal 1 foto referensi wajah yang terverifikasi');
+      return;
+    }
+
     setSaving(true);
     try {
+      // Calculate averaged descriptor vector across all takes
+      const numTakes = takes.length;
+      const avgDesc = new Array(128).fill(0);
+      for (const t of takes) {
+        for (let i = 0; i < 128; i++) {
+          avgDesc[i] += t.descriptor[i] / numTakes;
+        }
+      }
+
+      const primaryPhoto = takes[0]?.photo;
+
       await axios.post('/api/kiosk/register-face', {
         employee_id: selectedId,
-        face_photo: capturedPhoto || undefined,
+        face_photo: primaryPhoto,
+        face_descriptor: avgDesc,
         pin_code: pinCode || undefined
       });
+
+      toast.success(`Biometrik ${takes.length} referensi wajah berhasil disimpan!`);
       onSuccess();
     } catch (e) {
-      console.error(e);
+      console.error('Save biometrics error:', e);
+      toast.error(e.response?.data?.error || 'Gagal menyimpan data biometrik');
     } finally {
       setSaving(false);
     }
@@ -1644,9 +1773,14 @@ function FaceRegisterModal({ employees, currentTheme, onClose, onSuccess }) {
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-md bg-slate-900 border-slate-800 text-slate-100 p-6 rounded-3xl">
         <DialogHeader>
-          <DialogTitle className="text-base font-bold flex items-center gap-2">
-            <Camera className={cn("w-5 h-5", currentTheme?.text || "text-violet-400")} />
-            Daftarkan Wajah & PIN Karyawan
+          <DialogTitle className="text-base font-bold flex items-center justify-between gap-2">
+            <span className="flex items-center gap-2">
+              <Camera className={cn("w-5 h-5", currentTheme?.text || "text-violet-400")} />
+              Daftarkan Referensi Wajah AI
+            </span>
+            <Badge variant="outline" className="text-[10px] border-emerald-500/50 text-emerald-400 bg-emerald-950/40">
+              {takes.length}/3 Referensi
+            </Badge>
           </DialogTitle>
         </DialogHeader>
 
@@ -1656,7 +1790,10 @@ function FaceRegisterModal({ employees, currentTheme, onClose, onSuccess }) {
             <KioskSearchableEmployeeSelect
               employees={employees}
               value={selectedId}
-              onChange={id => setSelectedId(id)}
+              onChange={id => {
+                setSelectedId(id);
+                handleResetTakes();
+              }}
             />
           </div>
 
@@ -1670,23 +1807,78 @@ function FaceRegisterModal({ employees, currentTheme, onClose, onSuccess }) {
             />
           </div>
 
-          {/* Camera Viewfinder for registration */}
+          {/* Stepper Reference Indicators */}
+          <div className="bg-slate-950/70 p-3 rounded-2xl border border-slate-800/80">
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-[11px] font-bold text-slate-200">
+                {takes.length < 3 ? STEPS[takes.length]?.title : 'Semua Referensi Siap!'}
+              </span>
+              <span className="text-[10px] text-slate-400 font-mono">{takes.length} dari 3 foto</span>
+            </div>
+            <p className="text-[10px] text-slate-400 mb-3">
+              {takes.length < 3 ? STEPS[takes.length]?.tip : 'Data biometrik dari 3 sudut wajah telah diekstraksi.'}
+            </p>
+            <div className="grid grid-cols-3 gap-2">
+              {[0, 1, 2].map((stepIdx) => {
+                const t = takes[stepIdx];
+                const isCurrent = stepIdx === takes.length;
+                return (
+                  <div
+                    key={stepIdx}
+                    className={cn(
+                      "relative aspect-square rounded-xl border-2 overflow-hidden flex flex-col items-center justify-center transition-all",
+                      t ? "border-emerald-500 bg-emerald-950/30" : isCurrent ? "border-amber-400 bg-amber-950/20 animate-pulse" : "border-slate-800 bg-slate-900"
+                    )}
+                  >
+                    {t ? (
+                      <>
+                        <img src={t.photo} alt={`Take ${stepIdx + 1}`} className="w-full h-full object-cover" />
+                        <div className="absolute top-1 right-1 bg-emerald-500 text-white rounded-full p-0.5">
+                          <Check className="w-2.5 h-2.5" />
+                        </div>
+                      </>
+                    ) : (
+                      <div className="text-center p-1">
+                        <span className="text-xs font-bold text-slate-500">#{stepIdx + 1}</span>
+                        <p className="text-[8px] text-slate-500 leading-tight mt-0.5">
+                          {stepIdx === 0 ? 'Lurus' : stepIdx === 1 ? 'Kiri' : 'Kanan'}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Camera Viewfinder */}
           <div className={cn("relative w-48 h-48 mx-auto rounded-2xl overflow-hidden bg-slate-950 border-2 flex items-center justify-center", currentTheme?.border || "border-violet-500/40")}>
-            {capturedPhoto ? (
-              <img src={capturedPhoto} alt="Captured" className="w-full h-full object-cover" />
-            ) : (
-              <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover transform -scale-x-100" />
-            )}
+            <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover transform -scale-x-100" />
+            <div className="absolute inset-0 border border-dashed border-white/20 rounded-2xl pointer-events-none" />
+            <div className="absolute bottom-2 inset-x-2 bg-black/60 backdrop-blur-sm text-center py-1 rounded text-[10px] text-slate-300">
+              {detecting ? 'Menganalisis wajah...' : statusMsg}
+            </div>
           </div>
 
           <div className="flex justify-center gap-2">
-            {capturedPhoto ? (
-              <Button size="sm" variant="outline" onClick={() => setCapturedPhoto(null)} className="border-slate-800 bg-slate-950 text-slate-300">
-                Ambil Ulang
+            {takes.length > 0 && (
+              <Button size="sm" variant="outline" onClick={handleResetTakes} className="border-slate-800 bg-slate-950 text-slate-300 text-xs">
+                Reset / Ulang
+              </Button>
+            )}
+            {takes.length < 3 ? (
+              <Button
+                size="sm"
+                disabled={detecting}
+                onClick={handleCaptureSample}
+                className={cn("text-white font-bold text-xs gap-1.5", currentTheme?.primary || "bg-violet-600 hover:bg-violet-500")}
+              >
+                <Camera className="w-3.5 h-3.5" />
+                {detecting ? 'Mendeteksi...' : `Ambil Foto ${takes.length + 1} (${takes.length === 0 ? 'Lurus' : takes.length === 1 ? 'Kiri' : 'Kanan'})`}
               </Button>
             ) : (
-              <Button size="sm" onClick={handleCapture} className={cn("text-white font-bold", currentTheme?.primary || "bg-violet-600 hover:bg-violet-500")}>
-                Jepret Foto Wajah
+              <Button size="sm" variant="outline" onClick={handleResetTakes} className="border-emerald-500 text-emerald-400 text-xs">
+                ✓ 3 Foto Siap Disimpan
               </Button>
             )}
           </div>
@@ -1694,8 +1886,13 @@ function FaceRegisterModal({ employees, currentTheme, onClose, onSuccess }) {
 
         <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
           <Button size="sm" variant="ghost" onClick={onClose} className="text-slate-400">Batal</Button>
-          <Button size="sm" disabled={saving} onClick={handleSave} className={cn("text-white font-bold", currentTheme?.primarySolid || "bg-violet-600")}>
-            {saving ? 'Menyimpan...' : 'Simpan Data'}
+          <Button
+            size="sm"
+            disabled={saving || takes.length === 0}
+            onClick={handleSave}
+            className={cn("text-white font-bold", currentTheme?.primarySolid || "bg-violet-600")}
+          >
+            {saving ? 'Menyimpan...' : `Simpan Data Biometrik (${takes.length} Foto)`}
           </Button>
         </div>
       </DialogContent>
@@ -1739,25 +1936,47 @@ function OwnerThemeModal({ open, onClose, currentSettings, onSaveSettings }) {
       toast.error('File harus berupa gambar (JPG, PNG, WEBP)');
       return;
     }
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error('Ukuran file maksimal 5MB');
-      return;
-    }
 
+    setUploading(true);
     const reader = new FileReader();
-    reader.onload = async (event) => {
-      const base64 = event.target.result;
-      setUploading(true);
-      try {
-        const res = await axios.post('/api/kiosk/upload-bg', { image: base64 });
-        setDraftBgImage(res.data.url);
-        setDraftBgType('image');
-        toast.success('Gambar background berhasil diunggah');
-      } catch (err) {
-        toast.error(err.response?.data?.error || 'Gagal mengunggah gambar');
-      } finally {
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = async () => {
+        try {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          const maxDim = 1920;
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressedBase64 = canvas.toDataURL('image/jpeg', 0.88);
+
+          const res = await axios.post('/api/kiosk/upload-bg', { image: compressedBase64 });
+          setDraftBgImage(res.data.url);
+          setDraftBgType('image');
+          toast.success('Gambar background berhasil diunggah ke storage');
+        } catch (err) {
+          toast.error(err.response?.data?.error || 'Gagal mengunggah gambar');
+        } finally {
+          setUploading(false);
+        }
+      };
+      img.onerror = () => {
         setUploading(false);
-      }
+        toast.error('Gagal memproses gambar');
+      };
+      img.src = event.target.result;
     };
     reader.readAsDataURL(file);
   };

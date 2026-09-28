@@ -14,73 +14,107 @@ import { Plus, Loader2, Package, AlertTriangle, DollarSign, Scale, ExternalLink,
 import { useNavigate } from 'react-router-dom';
 
 function formatRp(v) { return `Rp ${Number(v || 0).toLocaleString('id')}`; }
-function formatUnitCost(cost, unit) { return `Rp ${Number(cost || 0).toFixed(2)} / ${unit || 'unit'}`; }
+function formatUnitCost(cost, unit) { return `${formatRp(cost)} / ${unit || 'unit'}`; }
 
-/**
- * Convert a base-unit value to human-readable multi-unit string.
- *
- * Rules:
- * 1. Find the largest unit where value >= 1 full unit
- * 2. Take as many full units as possible
- * 3. Remainder shown in next smaller unit (only if remainder > 0)
- * 4. Max 2 levels (e.g. "1 kg 200 g", not "1 kg 1 ons 50 g")
- *
- * @param {number} value - quantity in base unit
- * @param {object} baseUnitObj - the base unit { symbol, conversion_factor: 1 }
- * @param {Array} allUnits - all units from /units endpoint
- * @returns {string} e.g. "1 kg 200 g" or "500 g" or "2 L 400 ml"
- */
 /** Trim trailing zeros: 500.000 → "500", 1.500 → "1.5", 1.050 → "1.05" */
 function trimNum(n) {
   const f = parseFloat(n);
   if (!isFinite(f)) return '0';
-  // Use toPrecision-like approach: remove trailing zeros after decimal
-  const s = f.toFixed(3); // max 3 decimal places
+  const s = f.toFixed(3);
   return s.replace(/\.?0+$/, '');
 }
 
-function formatMultiUnit(value, baseUnitObj, allUnits) {
+/**
+ * Format ingredient stock quantity with intelligent unit conversions.
+ *
+ * Rules:
+ * 1. If ingredient has active custom conversion units (e.g. 1 kg = 1000 g, 1 dus = 40 pcs),
+ *    convert into the largest matching custom unit if value >= factor.
+ * 2. If base unit is 'g' (gram) and value >= 1000, show in 'kg' and remainder 'g'.
+ * 3. If base unit is 'ml' and value >= 1000, show in 'L' and remainder 'ml'.
+ * 4. Units like 'kg', 'L', 'box', 'pcs', 'pak', 'porsi', 'shot' display directly in their unit.
+ * 5. Kitchen spoon measures ('sdm', 'cup') are EXCLUDED from auto-conversion.
+ *
+ * @param {number|string} value - quantity
+ * @param {string|object} unitOrObj - symbol string (e.g. 'g', 'box', 'L') or unit object
+ * @param {Array} conversionsOrUnits - optional custom conversions or compatible units
+ * @param {Array} allUnits - master units from /units endpoint
+ * @returns {string} e.g. "20 g", "5 box", "20 L", "2 kg 500 g"
+ */
+function formatMultiUnit(value, unitOrObj, conversionsOrUnits = [], allUnits = []) {
   const num = parseFloat(value);
-  if (!value || isNaN(num)) return `0${baseUnitObj ? ' ' + baseUnitObj.symbol : ''}`;
-  if (num === 0) return `0 ${baseUnitObj?.symbol || ''}`;
+  const symbol = (typeof unitOrObj === 'string' ? unitOrObj : (unitOrObj?.symbol || unitOrObj?.unit || '')).trim();
 
-  // No unit info — just clean number
-  if (!baseUnitObj || !allUnits?.length) return `${trimNum(num)}`;
-
-  // Build family of compatible units, largest factor first
-  const family = allUnits
-    .filter(u => {
-      if (u.id === baseUnitObj.id) return true;
-      if (baseUnitObj.base_unit_id === null) return u.base_unit_id === baseUnitObj.id;
-      return u.base_unit_id === baseUnitObj.base_unit_id || u.id === baseUnitObj.base_unit_id;
-    })
-    .map(u => ({ ...u, factor: parseFloat(u.conversion_factor) }))
-    .sort((a, b) => b.factor - a.factor);
-
-  // Only base unit — show clean number without trailing zeros
-  if (family.length <= 1) {
-    return `${trimNum(num)} ${baseUnitObj.symbol}`;
+  if (!value || isNaN(num) || num === 0) {
+    return `0 ${symbol}`.trim();
   }
 
-  let remainder = num;
-  const parts = [];
+  // Determine conversions vs master units
+  let conversions = [];
+  if (Array.isArray(conversionsOrUnits)) {
+    if (conversionsOrUnits.length > 0 && (conversionsOrUnits[0].unit_symbol || conversionsOrUnits[0].conversion_qty)) {
+      conversions = conversionsOrUnits;
+    }
+  } else if (unitOrObj && Array.isArray(unitOrObj.conversions)) {
+    conversions = unitOrObj.conversions;
+  }
 
-  for (let i = 0; i < family.length && parts.length < 2; i++) {
-    const unit = family[i];
-    if (remainder <= 1e-9) break; // floating point zero
+  // 1. Check custom conversions for this ingredient (e.g. 1 kg = 1000 g, 1 dus = 24 pcs)
+  const excludedSymbols = ['sdm', 'cup', 'tsp', 'tbsp', 'sendok', 'cangkir'];
+  const validCustom = (Array.isArray(conversions) ? conversions : [])
+    .filter(c => c && c.unit_symbol && !excludedSymbols.includes(c.unit_symbol.toLowerCase()))
+    .map(c => ({
+      symbol: c.unit_symbol,
+      factor: parseFloat(c.conversion_qty || c.factor || 0)
+    }))
+    .filter(c => c.factor > 1)
+    .sort((a, b) => b.factor - a.factor);
 
-    const wholeUnits = Math.floor(remainder / unit.factor);
-    if (wholeUnits >= 1) {
-      parts.push(`${wholeUnits} ${unit.symbol}`);
-      remainder = parseFloat((remainder - wholeUnits * unit.factor).toFixed(6));
-    } else if (parts.length === 0 && i === family.length - 1) {
-      // Smallest unit — show with trimmed decimal
-      const clean = trimNum(remainder);
-      if (parseFloat(clean) > 0) parts.push(`${clean} ${unit.symbol}`);
+  for (const c of validCustom) {
+    if (num >= c.factor) {
+      const whole = Math.floor(num / c.factor);
+      const rem = parseFloat((num - whole * c.factor).toFixed(4));
+      if (rem > 0) {
+        return `${whole} ${c.symbol} ${trimNum(rem)} ${symbol}`;
+      }
+      return `${whole} ${c.symbol}`;
     }
   }
 
-  return parts.length > 0 ? parts.join(' ') : `${trimNum(num)} ${baseUnitObj.symbol}`;
+  // 2. Standard Metric auto-conversions
+  const symLower = symbol.toLowerCase();
+  if (symLower === 'g') {
+    if (num >= 1000) {
+      const kg = Math.floor(num / 1000);
+      const remG = parseFloat((num - kg * 1000).toFixed(3));
+      if (remG > 0) return `${kg} kg ${trimNum(remG)} g`;
+      return `${kg} kg`;
+    }
+    return `${trimNum(num)} g`;
+  }
+
+  if (symLower === 'ml') {
+    if (num >= 1000) {
+      const liters = Math.floor(num / 1000);
+      const remMl = parseFloat((num - liters * 1000).toFixed(3));
+      if (remMl > 0) return `${liters} L ${trimNum(remMl)} ml`;
+      return `${liters} L`;
+    }
+    return `${trimNum(num)} ml`;
+  }
+
+  if (symLower === 'mg') {
+    if (num >= 1000) {
+      const g = Math.floor(num / 1000);
+      const remMg = parseFloat((num - g * 1000).toFixed(3));
+      if (remMg > 0) return `${g} g ${trimNum(remMg)} mg`;
+      return `${g} g`;
+    }
+    return `${trimNum(num)} mg`;
+  }
+
+  // 3. For any other unit ('L', 'kg', 'box', 'pcs', 'pak', 'porsi', etc.), display as-is
+  return `${trimNum(num)} ${symbol}`.trim();
 }
 
 const EMPTY_FORM = { name: '', code: '', unit: '', unit_cost: '', stock_qty: '', min_stock: '', supplier_id: '', supplier_name: '', notes: '' };
@@ -213,8 +247,8 @@ export default function IngredientsPage() {
                   const baseUnitObj = units.find(u => u.id === item.unit_id)
                     || units.find(u => u.symbol === item.unit)
                     || { symbol: item.unit, conversion_factor: 1 };
-                  const stockDisplay = formatMultiUnit(item.stock_qty, baseUnitObj, units);
-                  const minDisplay  = formatMultiUnit(item.min_stock, baseUnitObj, units);
+                  const stockDisplay = formatMultiUnit(item.stock_qty, item.unit || baseUnitObj, item.conversions, units);
+                  const minDisplay  = formatMultiUnit(item.min_stock, item.unit || baseUnitObj, item.conversions, units);
                   return (
                     <TableRow key={item.id} className={!item.is_active ? 'opacity-50' : ''}>
                       <TableCell className="font-medium">{item.name}</TableCell>
@@ -689,8 +723,8 @@ function AdjustStockDialog({ item, onClose, onDone }) {
 
   // Format helpers using multi-unit
   const baseUnitObj = baseUnit || { symbol: itemUnit, conversion_factor: 1 };
-  const stockNow  = formatMultiUnit(item.stock_qty, baseUnitObj, compatibleUnits);
-  const stockNext = newQty !== null ? formatMultiUnit(newQty, baseUnitObj, compatibleUnits) : null;
+  const stockNow  = formatMultiUnit(item.stock_qty, item.unit || baseUnitObj, customUnits, compatibleUnits);
+  const stockNext = newQty !== null ? formatMultiUnit(newQty, item.unit || baseUnitObj, customUnits, compatibleUnits) : null;
 
   const handleSave = async (e) => {
     if (e?.preventDefault) e.preventDefault();
@@ -842,7 +876,7 @@ function AdjustStockDialog({ item, onClose, onDone }) {
                     <span className="font-bold text-blue-800">{inputQty} {selectedInputUnit.symbol}</span>
                     <span className="text-blue-400">→</span>
                     <span className="font-bold text-blue-900 text-base">
-                      {formatMultiUnit(parseFloat(previewChange), baseUnitObj, compatibleUnits)}
+                      {formatMultiUnit(parseFloat(previewChange), item.unit || baseUnitObj, customUnits, compatibleUnits)}
                     </span>
                     <span className="text-[10px] text-blue-500">
                       (1 {selectedInputUnit.symbol} = {parseFloat(selectedInputUnit.conversion_factor)} {baseUnit?.symbol})
