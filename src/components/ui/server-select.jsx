@@ -18,6 +18,7 @@
  *   className     string
  */
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useDebounce } from '../../hooks/useApi';
 import api from '../../lib/api';
 import { Search, X, Loader2, ChevronDown } from 'lucide-react';
@@ -167,7 +168,7 @@ export function ServerSelect({
       </div>
 
       {/* Dropdown — fixed position to escape overflow clip */}
-      {show && rect && (
+      {show && rect && createPortal(
         <div
           className="fixed z-[9999] bg-card border rounded-xl shadow-2xl overflow-hidden"
           style={{ top: rect.bottom + 4, left: rect.left, width: Math.max(rect.width, 260) }}
@@ -191,7 +192,8 @@ export function ServerSelect({
               </button>
             ))}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

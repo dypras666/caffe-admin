@@ -131,6 +131,7 @@ function buildNavGroups(settings = {}) {
     color: 'text-violet-600',
     adminOnly: true,
     items: [
+      { to: '/social-posts', icon: FileText, label: 'Moderasi Feed', adminOnly: true },
       { to: '/posts',      icon: FileText, label: 'Post & Halaman', adminOnly: true },
       { to: '/media',      icon: Image,    label: 'Galeri Media',    adminOnly: true },
       { to: '/navigation', icon: PanelTop, label: 'Navigasi Menu',   adminOnly: true },

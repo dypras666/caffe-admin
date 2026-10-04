@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect, createContext, useContext } from 'react';
+import { createPortal } from 'react-dom';
 import { useFetch, useDebounce } from '../hooks/useApi';
 import { useAuth } from '../context/AuthContext';
 import api from '../lib/api';
@@ -807,7 +808,7 @@ function IngredientSearchInput({ selectedName, selectedUnit, onSelect, onClear }
         className="h-9 text-sm"
         autoComplete="off"
       />
-      {show && rect && (
+      {show && rect && createPortal(
         <div
           className="bg-card border rounded-xl shadow-2xl z-[9999]"
           style={{
@@ -837,7 +838,8 @@ function IngredientSearchInput({ selectedName, selectedUnit, onSelect, onClear }
               </button>
             ))}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

@@ -40,6 +40,7 @@ import ReportsPage from './pages/ReportsPage';
 import ShiftPage from './pages/ShiftPage';
 import HRPage from './pages/HRPage';
 import PostsPage from './pages/PostsPage';
+import SocialPostsPage from './pages/SocialPostsPage';
 import RolesPage from './pages/RolesPage';
 import VouchersPage from './pages/VouchersPage';
 import BackupPage from './pages/BackupPage';
@@ -113,6 +114,7 @@ function AppRoutes() {
         <Route path="hr/lembur" element={<RequireAdmin><HRPage defaultTab="overtime" /></RequireAdmin>} />
         <Route path="hr/kpi" element={<RequireAdmin><HRPage defaultTab="kpi" /></RequireAdmin>} />
         <Route path="posts" element={<RequireAdmin><PostsPage /></RequireAdmin>} />
+        <Route path="social-posts" element={<RequireAdmin><SocialPostsPage /></RequireAdmin>} />
         <Route path="roles" element={<RequireAdmin><RolesPage /></RequireAdmin>} />
         <Route path="vouchers" element={<RequireAdmin><VouchersPage /></RequireAdmin>} />
         <Route path="backup" element={<RequireAdmin><BackupPage /></RequireAdmin>} />
