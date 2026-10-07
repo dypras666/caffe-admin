@@ -10,7 +10,9 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '.
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../components/ui/select';
 import { Badge } from '../components/ui/badge';
-import { Plus, Minus, Pencil, Trash2, Loader2, Search, PackagePlus, ArrowUpCircle, ArrowDownCircle, History, Upload, X, Image } from 'lucide-react';
+import { Plus, Minus, Pencil, Trash2, Loader2, Search, PackagePlus, ArrowUpCircle, ArrowDownCircle, History, Upload, X, Image, Building2 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { useGlobalBranch } from '../context/BranchContext';
 
 function formatRp(v) { return `Rp ${Number(v || 0).toLocaleString('id')}`; }
 
@@ -29,10 +31,13 @@ const EMPTY_STOCK_FORM = {
   qty_change: '',
   movement_type: 'adjustment',
   note: '',
+  branch_id: '',
 };
 
 export default function ProductsPage() {
   const toast = useToast();
+  const { user } = useAuth();
+  const { branchId: selectedBranchId, setBranchId, isAdmin } = useGlobalBranch();
   const { can } = usePermissions();
   const canCreate = can('create', 'products');
   const canUpdate = can('update', 'products');
@@ -53,8 +58,17 @@ export default function ProductsPage() {
   // Quick +/- in-place (optimistic update)
   const [quickAdjusting, setQuickAdjusting] = useState(null); // product id being adjusted
 
+  const { data: branchData } = useFetch('/branches');
+  const branches = branchData?.branches || [];
+
+  const effectiveBranchId = (selectedBranchId && selectedBranchId !== 'all')
+    ? selectedBranchId
+    : (!isAdmin ? String(user?.branch_id || '') : '');
+  const activeBranchName = branches.find(b => String(b.id) === String(effectiveBranchId))?.name;
+
   const debouncedSearch = useDebounce(search, 350);
-  const qs = `?page=${page}&limit=12${debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ''}${typeFilter !== 'all' ? `&product_type=${typeFilter}` : ''}`;
+  const branchQs = effectiveBranchId ? `&branch_id=${effectiveBranchId}` : '';
+  const qs = `?page=${page}&limit=12${debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ''}${typeFilter !== 'all' ? `&product_type=${typeFilter}` : ''}${branchQs}`;
   const { data, loading, refetch } = useFetch(`/products${qs}`);
   const { data: catData } = useFetch('/categories');
 
@@ -86,7 +100,10 @@ export default function ProductsPage() {
 
   const openStockAdjust = (p) => {
     setStockProduct(p);
-    setStockForm(EMPTY_STOCK_FORM);
+    setStockForm({
+      ...EMPTY_STOCK_FORM,
+      branch_id: effectiveBranchId || (branches[0] ? String(branches[0].id) : ''),
+    });
     setStockOpen(true);
   };
 
@@ -107,6 +124,7 @@ export default function ProductsPage() {
         duration_minutes: isService && form.duration_minutes ? parseInt(form.duration_minutes) : null,
         lead_time_days: isService && form.lead_time_days ? parseInt(form.lead_time_days) : 0,
         requires_schedule: isService ? (form.requires_schedule ? 1 : 0) : 0,
+        branch_id: effectiveBranchId ? parseInt(effectiveBranchId) : undefined,
       };
       if (editId) {
         await api.put(`/products/${editId}`, payload);
@@ -133,6 +151,7 @@ export default function ProductsPage() {
         qty_change: parseInt(stockForm.qty_change),
         movement_type: stockForm.movement_type,
         note: stockForm.note || undefined,
+        branch_id: stockForm.branch_id ? parseInt(stockForm.branch_id) : (effectiveBranchId ? parseInt(effectiveBranchId) : undefined),
       });
       toast.success('Stok berhasil disesuaikan');
       setStockOpen(false);
@@ -154,6 +173,7 @@ export default function ProductsPage() {
         qty_change: delta,
         movement_type: delta > 0 ? 'in' : 'adjustment',
         note: delta > 0 ? 'Tambah stok cepat' : 'Kurang stok cepat',
+        branch_id: effectiveBranchId ? parseInt(effectiveBranchId) : (branches[0] ? branches[0].id : undefined),
       });
       toast.success(`Stok ${product.name} berhasil diubah (${delta > 0 ? '+' : ''}${delta})`);
       refetch();
@@ -177,6 +197,35 @@ export default function ProductsPage() {
 
   return (
     <div className="space-y-5">
+      {/* Header with Title & Branch Selection */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <h1 className="text-lg font-bold">Produk & Layanan</h1>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {effectiveBranchId
+              ? `Menampilkan stok untuk: ${activeBranchName || '#' + effectiveBranchId}`
+              : 'Menampilkan total stok dari semua cabang.'}
+          </p>
+        </div>
+
+        {isAdmin && branches.length > 0 && (
+          <div className="flex items-center gap-2">
+            <Building2 className="w-4 h-4 text-muted-foreground shrink-0" />
+            <Select value={selectedBranchId || 'all'} onValueChange={setBranchId}>
+              <SelectTrigger className="w-52 h-9 text-xs">
+                <SelectValue placeholder="Pilih Cabang" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua Cabang (Total Stok)</SelectItem>
+                {branches.map(b => (
+                  <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+      </div>
+
       <div className="flex items-center gap-3 flex-wrap">
         <div className="relative flex-1 max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -230,7 +279,7 @@ export default function ProductsPage() {
                   <TableHead>SKU</TableHead>
                   <TableHead>Kategori</TableHead>
                   <TableHead>Harga</TableHead>
-                  <TableHead>Stok / Tipe</TableHead>
+                  <TableHead>Stok {effectiveBranchId ? `(${activeBranchName || 'Cabang'})` : '(Total)'}</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Aksi</TableHead>
                 </TableRow>
@@ -271,26 +320,37 @@ export default function ProductsPage() {
                       {p.product_type === 'service' ? (
                         <span className="text-xs text-muted-foreground italic bg-muted/60 px-2 py-0.5 rounded">Jasa / Unlimited</span>
                       ) : (
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => quickAdjust(p, -1)}
-                            disabled={quickAdjusting === p.id || p.stock <= 0}
-                            className="w-5 h-5 rounded flex items-center justify-center bg-muted hover:bg-red-100 hover:text-red-600 disabled:opacity-30 transition-colors"
-                            title="Kurangi 1"
-                          >
-                            {quickAdjusting === p.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Minus className="w-3 h-3" />}
-                          </button>
-                          <span className={`w-8 text-center text-sm font-semibold tabular-nums ${p.stock === 0 ? 'text-red-600' : p.stock <= (p.min_stock || 0) && p.min_stock > 0 ? 'text-amber-600' : ''}`}>
-                            {p.stock}
-                          </span>
-                          <button
-                            onClick={() => quickAdjust(p, 1)}
-                            disabled={quickAdjusting === p.id}
-                            className="w-5 h-5 rounded flex items-center justify-center bg-muted hover:bg-green-100 hover:text-green-600 disabled:opacity-30 transition-colors"
-                            title="Tambah 1"
-                          >
-                            {quickAdjusting === p.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
-                          </button>
+                        <div className="space-y-1.5">
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => quickAdjust(p, -1)}
+                              disabled={quickAdjusting === p.id || p.stock <= 0}
+                              className="w-5 h-5 rounded flex items-center justify-center bg-muted hover:bg-red-100 hover:text-red-600 disabled:opacity-30 transition-colors"
+                              title="Kurangi 1"
+                            >
+                              {quickAdjusting === p.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Minus className="w-3 h-3" />}
+                            </button>
+                            <span className={`w-8 text-center text-sm font-semibold tabular-nums ${p.stock === 0 ? 'text-red-600' : p.stock <= (p.min_stock || 0) && p.min_stock > 0 ? 'text-amber-600' : ''}`}>
+                              {p.stock}
+                            </span>
+                            <button
+                              onClick={() => quickAdjust(p, 1)}
+                              disabled={quickAdjusting === p.id}
+                              className="w-5 h-5 rounded flex items-center justify-center bg-muted hover:bg-green-100 hover:text-green-600 disabled:opacity-30 transition-colors"
+                              title="Tambah 1"
+                            >
+                              {quickAdjusting === p.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+                            </button>
+                          </div>
+                          {!effectiveBranchId && p.branch_stocks && p.branch_stocks.length > 0 && (
+                            <div className="flex flex-wrap gap-1 max-w-[210px]">
+                              {p.branch_stocks.map(bs => (
+                                <span key={bs.branch_id} className="text-[10px] px-1.5 py-0.5 rounded bg-muted/90 text-muted-foreground font-mono">
+                                  {bs.branch_name ? bs.branch_name.replace('Café Azzura - ', '').replace('Azzura Cafe ', '').replace('Azzura ', '') : `B#${bs.branch_id}`}: <strong className={bs.stock === 0 ? 'text-red-500' : 'text-foreground'}>{bs.stock}</strong>
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       )}
                     </TableCell>
@@ -536,6 +596,8 @@ export default function ProductsPage() {
           saving={stockSaving}
           onSubmit={handleStockAdjust}
           onClose={() => { setStockOpen(false); setStockProduct(null); setStockForm(EMPTY_STOCK_FORM); }}
+          branches={branches}
+          effectiveBranchId={effectiveBranchId}
         />
       )}
     </div>
@@ -543,12 +605,23 @@ export default function ProductsPage() {
 }
 
 // ─── Stock Adjust Dialog with Log ────────────────────────────
-function StockAdjustDialog({ product, form, setForm, saving, onSubmit, onClose }) {
-  const { data: logData, loading: logLoading, refetch: refetchLog } = useFetch(`/stock/card/${product.id}`);
+function StockAdjustDialog({ product, form, setForm, saving, onSubmit, onClose, branches = [], effectiveBranchId }) {
+  const branchParam = form.branch_id ? `?branch_id=${form.branch_id}` : (effectiveBranchId ? `?branch_id=${effectiveBranchId}` : '');
+  const { data: logData, loading: logLoading, refetch: refetchLog } = useFetch(`/stock/card/${product.id}${branchParam}`);
   const logs = logData?.cards || [];
 
+  const targetBranchName = branches.find(b => String(b.id) === String(form.branch_id || effectiveBranchId))?.name;
+
+  const currentStockForBranch = (() => {
+    if (form.branch_id && product.branch_stocks) {
+      const match = product.branch_stocks.find(bs => String(bs.branch_id) === String(form.branch_id));
+      if (match) return match.stock;
+    }
+    return product.stock;
+  })();
+
   const previewStock = form.qty_change
-    ? product.stock + parseInt(form.qty_change || 0)
+    ? currentStockForBranch + parseInt(form.qty_change || 0)
     : null;
 
   const MOVE_COLOR = {
@@ -575,13 +648,15 @@ function StockAdjustDialog({ product, form, setForm, saving, onSubmit, onClose }
             <PackagePlus className="w-4 h-4 text-primary" />
             Penyesuaian Stok — {product.name}
           </DialogTitle>
-          <div className="flex items-center gap-3 mt-1.5">
-            <span className="text-xs text-muted-foreground">Stok sekarang:</span>
-            <span className="text-lg font-bold text-primary">{product.stock} {product.unit || 'pcs'}</span>
-            {previewStock !== null && previewStock !== product.stock && (
+          <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+            <span className="text-xs text-muted-foreground">
+              Stok {targetBranchName ? `(${targetBranchName})` : 'sekarang'}:
+            </span>
+            <span className="text-lg font-bold text-primary">{currentStockForBranch} {product.unit || 'pcs'}</span>
+            {previewStock !== null && previewStock !== currentStockForBranch && (
               <>
                 <span className="text-muted-foreground">→</span>
-                <span className={`text-lg font-bold ${previewStock < 0 ? 'text-red-600' : previewStock < product.stock ? 'text-amber-600' : 'text-green-600'}`}>
+                <span className={`text-lg font-bold ${previewStock < 0 ? 'text-red-600' : previewStock < currentStockForBranch ? 'text-amber-600' : 'text-green-600'}`}>
                   {previewStock}
                 </span>
               </>
@@ -592,6 +667,19 @@ function StockAdjustDialog({ product, form, setForm, saving, onSubmit, onClose }
         {/* Form */}
         <form onSubmit={handleSubmitWithRefetch} className="px-5 pt-4 pb-3 space-y-3 border-b shrink-0">
           <div className="grid grid-cols-2 gap-3">
+            {branches.length > 0 && (
+              <div className="col-span-2">
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Cabang *</label>
+                <Select value={String(form.branch_id || '')} onValueChange={v => setForm(f => ({ ...f, branch_id: v }))}>
+                  <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Pilih Cabang" /></SelectTrigger>
+                  <SelectContent>
+                    {branches.map(b => (
+                      <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div>
               <label className="text-xs font-medium text-muted-foreground mb-1 block">Perubahan Qty *</label>
               <Input

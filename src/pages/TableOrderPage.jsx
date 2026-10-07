@@ -5,7 +5,9 @@ import { useAuth } from '../context/AuthContext';
 import { useShiftGuard } from '../hooks/useShiftGuard';
 import api from '../lib/api';
 import { cn } from '../lib/utils';
-import { buildReceiptHTML, buildKitchenHTML, smartPrint } from '../lib/printer';
+import { buildReceiptHTML, buildKitchenHTML, buildLabelHTML, smartPrint } from '../lib/printer';
+import WhatsAppReceiptModal from '../components/WhatsAppReceiptModal';
+import ManualLabelPrintModal from '../components/ManualLabelPrintModal';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
@@ -14,7 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/table';
 import {
   Loader2, RefreshCw, Users, ShoppingBag, Receipt, Utensils,
-  ChevronRight, Clock, Check, X, Printer, Building2,
+  ChevronRight, Clock, Check, X, Printer, Building2, Tag, MessageCircle,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -46,6 +48,14 @@ export default function TableOrderPage() {
   const [roomFilter, setRoomFilter] = useState('all');
   const [selectedTable, setSelectedTable] = useState(null);
   const socket = useSocket();
+  const [whatsappModalOpen, setWhatsappModalOpen] = useState(false);
+  const [whatsappTargetOrder, setWhatsappTargetOrder] = useState(null);
+  const [manualLabelModalOpen, setManualLabelModalOpen] = useState(false);
+  const [manualLabelOrderId, setManualLabelOrderId] = useState(null);
+
+  const { data: settingsData } = useFetch('/settings');
+  const settings = (settingsData?.settings || []).reduce((a, s) => ({ ...a, [s.setting_key]: s.setting_value }), {});
+
   const { data: tablesData, loading: loadingTables, refetch: refetchTables } = useFetch('/tables');
   const { data: activeOrdersData, refetch: refetchPending } = useFetch('/orders?status=pending&limit=100&page=1');
   const { data: preparingData, refetch: refetchPreparing } = useFetch('/orders?status=preparing&limit=100&page=1');
@@ -268,6 +278,34 @@ export default function TableOrderPage() {
           onClose={() => setSelectedTable(null)}
           onRefresh={refetchAll}
           navigate={navigate}
+          onShareWhatsApp={(ord) => { setWhatsappTargetOrder(ord); setWhatsappModalOpen(true); }}
+          onOpenManualLabel={(id) => { setManualLabelOrderId(id); setManualLabelModalOpen(true); }}
+        />
+      )}
+
+      {/* Manual Label Print Modal */}
+      {manualLabelModalOpen && manualLabelOrderId && (
+        <ManualLabelPrintModal
+          open={manualLabelModalOpen}
+          orderId={manualLabelOrderId}
+          onClose={() => {
+            setManualLabelModalOpen(false);
+            setManualLabelOrderId(null);
+          }}
+        />
+      )}
+
+      {/* WhatsApp Receipt Modal */}
+      {whatsappModalOpen && whatsappTargetOrder && (
+        <WhatsAppReceiptModal
+          open={whatsappModalOpen}
+          onClose={() => { setWhatsappModalOpen(false); setWhatsappTargetOrder(null); }}
+          order={whatsappTargetOrder}
+          items={whatsappTargetOrder.items || []}
+          shopName={settings.cafe_name || settings.site_name || currentBranch?.name || ''}
+          address={settings.cafe_address || settings.contact_address || currentBranch?.address || ''}
+          phone={settings.contact_phone || currentBranch?.phone || ''}
+          currency={settings.currency_symbol || 'Rp'}
         />
       )}
     </div>
@@ -275,7 +313,7 @@ export default function TableOrderPage() {
 }
 
 // ─── Table Detail Panel ───────────────────────────────────────
-function TableDetailPanel({ table, orders, onClose, onRefresh, navigate }) {
+function TableDetailPanel({ table, orders, onClose, onRefresh, navigate, onShareWhatsApp, onOpenManualLabel }) {
   const [updatingId, setUpdatingId] = useState(null);
 
   const updateStatus = async (orderId, status) => {
@@ -290,15 +328,23 @@ function TableDetailPanel({ table, orders, onClose, onRefresh, navigate }) {
   const printReceipt = async (orderId) => {
     try {
       const r = await api.get(`/printers/receipt/${orderId}`);
-      await smartPrint(buildReceiptHTML(r.data.receipt, r.data.printer), r.data.printer, 'receipt');
+      await smartPrint(buildReceiptHTML(r.data.receipt, r.data.printer), r.data.printer, 'receipt', r.data.receipt);
     } catch { alert('Gagal print'); }
   };
 
   const printKitchen = async (orderId) => {
     try {
       const r = await api.get(`/printers/kitchen/${orderId}`);
-      await smartPrint(buildKitchenHTML(r.data.ticket, r.data.printer), r.data.printer, 'kitchen');
+      await smartPrint(buildKitchenHTML(r.data.ticket, r.data.printer), r.data.printer, 'kitchen', r.data.ticket);
     } catch { alert('Gagal print'); }
+  };
+
+  const printLabel = async (orderId) => {
+    try {
+      const l = await api.get(`/printers/label/${orderId}`);
+      const lData = l.data.label_data || l.data.labelData;
+      await smartPrint(buildLabelHTML(lData, l.data.printer), l.data.printer, 'label', lData);
+    } catch { alert('Gagal print label'); }
   };
 
   const style = TABLE_STATUS_STYLE[table.status] || TABLE_STATUS_STYLE.available;
@@ -373,6 +419,14 @@ function TableDetailPanel({ table, orders, onClose, onRefresh, navigate }) {
                   </Button>
                   <Button variant="outline" size="sm" className="text-[10px] h-7 px-2 gap-1" onClick={() => printKitchen(order.id)}>
                     <Utensils className="w-3 h-3" />Dapur
+                  </Button>
+                  <Button variant="outline" size="sm" className="text-[10px] h-7 px-2 gap-1 text-indigo-700 hover:text-indigo-800"
+                    title="Cetak Label Cup (Pilih Manual / Semua)"
+                    onClick={() => onOpenManualLabel ? onOpenManualLabel(order.id) : printLabel(order.id)}>
+                    <Tag className="w-3 h-3" />Label
+                  </Button>
+                  <Button variant="outline" size="sm" className="text-[10px] h-7 px-2 gap-1 text-emerald-700 hover:text-emerald-800" onClick={() => onShareWhatsApp && onShareWhatsApp(order)}>
+                    <MessageCircle className="w-3 h-3" />WA
                   </Button>
                   {['pending', 'preparing'].includes(order.order_status) && (
                     <Button variant="ghost" size="sm" className="text-[10px] h-7 px-2 text-destructive hover:bg-destructive/10"

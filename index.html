@@ -3,18 +3,55 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/webp" href="https://cdn-media.caffe.id/settings/favicon_1790747454_4c3ed9ca.webp" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>Admin Panel</title>
+    <style>
+      html, body {
+        touch-action: pan-x pan-y;
+        -webkit-text-size-adjust: 100%;
+        text-size-adjust: 100%;
+        overscroll-behavior-y: none;
+        overflow-x: hidden;
+        max-width: 100vw;
+      }
+      #root {
+        min-height: 100vh;
+        width: 100%;
+        overflow-x: hidden;
+      }
+    </style>
     <script>
+      // Prevent pinch-to-zoom and multi-touch zoom on mobile/tablets for POS backoffice
+      document.addEventListener('gesturestart', function(e) { e.preventDefault(); }, { passive: false });
+      document.addEventListener('gesturechange', function(e) { e.preventDefault(); }, { passive: false });
+      document.addEventListener('gestureend', function(e) { e.preventDefault(); }, { passive: false });
+      document.addEventListener('touchmove', function(e) {
+        if (e.touches && e.touches.length > 1) {
+          e.preventDefault();
+        }
+      }, { passive: false });
+      var lastTouchEnd = 0;
+      document.addEventListener('touchend', function(e) {
+        var now = (new Date()).getTime();
+        if (now - lastTouchEnd <= 300) {
+          var target = e.target;
+          var isInteractive = target && target.closest && target.closest('button, input, textarea, select, a, [role="button"], label');
+          if (!isInteractive) {
+            e.preventDefault();
+          }
+        }
+        lastTouchEnd = now;
+      }, { passive: false });
+
       // Set title from API before React loads
       (function() {
         var cached = sessionStorage.getItem('admin_cafe_name');
-        if (cached) { document.title = cached + ' — Admin'; return; }
+        if (cached) { document.title = cached + ' - Admin'; return; }
         fetch('/api/settings/cafe_name')
           .then(function(r) { return r.json(); })
           .then(function(d) {
             var n = (d && (d.value || (d.setting && d.setting.setting_value))) || '';
-            if (n) { document.title = n + ' — Admin'; sessionStorage.setItem('admin_cafe_name', n); }
+            if (n) { document.title = n + ' - Admin'; sessionStorage.setItem('admin_cafe_name', n); }
           })
           .catch(function() {});
       })();

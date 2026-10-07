@@ -8,8 +8,10 @@ import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../components/ui/select';
-import { Loader2, Clock, DollarSign, Printer, TrendingUp, TrendingDown, AlertTriangle } from 'lucide-react';
+import { Loader2, Clock, DollarSign, Printer, TrendingUp, TrendingDown, AlertTriangle, AlertCircle, Building2 } from 'lucide-react';
 import { useToast } from '../components/ui/toast';
+import { useAuth } from '../context/AuthContext';
+import { useGlobalBranch } from '../context/BranchContext';
 
 const fmt = (v) => `Rp ${Number(v || 0).toLocaleString('id')}`;
 
@@ -36,7 +38,15 @@ function ShiftReportDialog({ shiftId, open, onClose }) {
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Laporan Shift #{report.shift_number || shiftId}</DialogTitle>
+          <div className="flex items-center justify-between pr-6">
+            <DialogTitle>Laporan Shift #{data?.shift?.shift_number || report.shift_number || shiftId}</DialogTitle>
+            {(data?.shift?.branch_name || report.branch_name) && (
+              <Badge variant="outline" className="flex items-center gap-1 text-xs">
+                <Building2 className="w-3 h-3 text-muted-foreground" />
+                {data?.shift?.branch_name || report.branch_name}
+              </Badge>
+            )}
+          </div>
         </DialogHeader>
 
         {loading ? (
@@ -377,11 +387,29 @@ function CloseShiftDialog({ shift, open, onClose, onSuccess }) {
 export default function ShiftPage() {
   const toast = useToast();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const { branchId: selectedBranchId, setBranchId, isAdmin } = useGlobalBranch();
+
+  // Branch data
+  const { data: branchesData } = useFetch('/branches');
+  const branches = branchesData?.branches || [];
+
+  const effectiveBranchId = (selectedBranchId && selectedBranchId !== 'all')
+    ? selectedBranchId
+    : (!isAdmin ? String(user?.branch_id || '') : '');
+
+  const activeBranch = branches.find(b => String(b.id) === String(effectiveBranchId));
+  const activeBranchName = activeBranch?.name;
 
   const { data: settingsData, loading: settingsLoading } = useFetch('/settings');
-  const { data: currentShiftData, loading: currentShiftLoading, refetch: refetchCurrent } = useFetch('/shifts/current');
-  const { data: historyData, loading: historyLoading, refetch: refetchHistory } = useFetch('/shifts?limit=10');
-  const { data: stationsData } = useFetch('/stations');
+  
+  // Shift fetch query strings based on branch
+  const currentShiftUrl = effectiveBranchId ? `/shifts/current?branch_id=${effectiveBranchId}` : (!isAdmin ? '/shifts/current' : null);
+  const historyUrl = effectiveBranchId ? `/shifts?limit=20&branch_id=${effectiveBranchId}` : '/shifts?limit=20';
+
+  const { data: currentShiftData, loading: currentShiftLoading, refetch: refetchCurrent } = useFetch(currentShiftUrl);
+  const { data: historyData, loading: historyLoading, refetch: refetchHistory } = useFetch(historyUrl);
+  const { data: stationsData } = useFetch(effectiveBranchId ? `/stations?branch_id=${effectiveBranchId}` : '/stations');
 
   const [openingCash, setOpeningCash] = useState('');
   const [station, setStation] = useState('');
@@ -403,15 +431,21 @@ export default function ShiftPage() {
   const lastClosed = history.find(s => s.status === 'closed' || s.closed_at);
   const suggestedCash = lastClosed?.handover_cash ? parseFloat(lastClosed.handover_cash) : null;
 
-  const isLoading = settingsLoading || currentShiftLoading;
+  const isLoading = settingsLoading || (effectiveBranchId && currentShiftLoading);
 
   const handleOpenShift = async () => {
+    if (isAdmin && !effectiveBranchId) {
+      toast.error('Silakan pilih cabang terlebih dahulu');
+      return;
+    }
+
     setOpening(true);
     try {
       await api.post('/shifts/open', {
         opening_cash: Number(openingCash) || 0,
         station_id: station || undefined,
         notes: notes || undefined,
+        branch_id: effectiveBranchId ? Number(effectiveBranchId) : undefined,
       });
       setOpeningCash('');
       setStation('');
@@ -459,18 +493,75 @@ export default function ShiftPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-3xl mx-auto">
-      <h1 className="text-lg font-semibold">Manajemen Shift</h1>
+    <div className="space-y-6 max-w-4xl mx-auto">
+      {/* Header & Branch Selector */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <h1 className="text-lg font-semibold">Manajemen Shift</h1>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {effectiveBranchId
+              ? `Shift untuk cabang: ${activeBranchName || '#' + effectiveBranchId}`
+              : 'Menampilkan riwayat semua cabang. Pilih cabang untuk kelola shift aktif.'}
+          </p>
+        </div>
 
-      {/* Open shift or current shift */}
-      {!hasOpenShift ? (
+        {isAdmin && branches.length > 0 && (
+          <div className="flex items-center gap-2">
+            <Building2 className="w-4 h-4 text-muted-foreground shrink-0" />
+            <Select value={selectedBranchId || 'all'} onValueChange={setBranchId}>
+              <SelectTrigger className="w-52 h-9 text-xs">
+                <SelectValue placeholder="Pilih Cabang" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua Cabang (Riwayat)</SelectItem>
+                {branches.map(b => (
+                  <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+      </div>
+
+      {/* Admin Notice when "Semua Cabang" is selected */}
+      {isAdmin && !effectiveBranchId ? (
+        <Card className="border-dashed bg-muted/20">
+          <CardContent className="pt-6 pb-6 text-center space-y-3">
+            <Building2 className="w-8 h-8 mx-auto text-muted-foreground opacity-60" />
+            <div>
+              <p className="font-medium text-sm">Pilih Cabang untuk Membuka atau Menutup Shift</p>
+              <p className="text-xs text-muted-foreground mt-1 max-w-md mx-auto">
+                Setiap shift berjalan secara mandiri per cabang. Silakan pilih cabang di bawah ini untuk melihat shift aktif atau membuka shift baru.
+              </p>
+            </div>
+            {branches.length > 0 && (
+              <div className="flex flex-wrap gap-2 justify-center pt-2">
+                {branches.map(b => (
+                  <Button key={b.id} variant="outline" size="sm" onClick={() => setBranchId(String(b.id))} className="text-xs gap-1.5">
+                    <Building2 className="w-3.5 h-3.5 text-primary" />
+                    {b.name}
+                  </Button>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      ) : !hasOpenShift ? (
         /* ── Buka Shift ── */
         <Card className="border-emerald-300 dark:border-emerald-700">
           <CardHeader>
-            <CardTitle className="text-base text-emerald-700 dark:text-emerald-400 flex items-center gap-2">
-              <Clock className="w-4 h-4" />
-              Buka Shift Baru
-            </CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base text-emerald-700 dark:text-emerald-400 flex items-center gap-2">
+                <Clock className="w-4 h-4" />
+                Buka Shift Baru
+              </CardTitle>
+              {activeBranchName && (
+                <Badge variant="outline" className="text-xs font-normal text-emerald-700 dark:text-emerald-300 border-emerald-300 flex items-center gap-1">
+                  <Building2 className="w-3 h-3" />
+                  {activeBranchName}
+                </Badge>
+              )}
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
@@ -516,7 +607,7 @@ export default function ShiftPage() {
             </div>
             <Button onClick={handleOpenShift} disabled={opening} className="w-full gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white">
               {opening ? <Loader2 className="w-4 h-4 animate-spin" /> : <Clock className="w-4 h-4" />}
-              Buka Shift
+              Buka Shift {activeBranchName ? `(${activeBranchName})` : ''}
             </Button>
           </CardContent>
         </Card>
@@ -529,7 +620,15 @@ export default function ShiftPage() {
                 <Clock className="w-4 h-4" />
                 Shift Sedang Berjalan
               </CardTitle>
-              <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300 border-amber-300">Aktif</Badge>
+              <div className="flex items-center gap-2">
+                {(currentShift.branch_name || activeBranchName) && (
+                  <Badge variant="outline" className="text-xs font-normal text-amber-800 dark:text-amber-300 border-amber-300 flex items-center gap-1">
+                    <Building2 className="w-3 h-3" />
+                    {currentShift.branch_name || activeBranchName}
+                  </Badge>
+                )}
+                <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300 border-amber-300">Aktif</Badge>
+              </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -586,7 +685,14 @@ export default function ShiftPage() {
       {/* Shift history */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Riwayat Shift</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base">Riwayat Shift</CardTitle>
+            {activeBranchName && (
+              <Badge variant="outline" className="text-xs font-normal text-muted-foreground">
+                {activeBranchName}
+              </Badge>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           {historyLoading ? (
@@ -599,6 +705,7 @@ export default function ShiftPage() {
                 <thead>
                   <tr className="border-b text-xs text-muted-foreground">
                     <th className="py-2 text-left">Shift</th>
+                    <th className="py-2 text-left">Cabang</th>
                     <th className="py-2 text-left">Dibuka Oleh</th>
                     <th className="py-2 text-left hidden sm:table-cell">Dibuka</th>
                     <th className="py-2 text-left hidden sm:table-cell">Ditutup</th>
@@ -619,6 +726,7 @@ export default function ShiftPage() {
                         onClick={() => setReportDialogShiftId(s.id)}
                       >
                         <td className="py-2 font-mono text-xs">{s.shift_number || `#${s.id}`}</td>
+                        <td className="py-2 text-xs font-medium text-muted-foreground">{s.branch_name || '—'}</td>
                         <td className="py-2">{s.opened_by_name || s.user_name || '—'}</td>
                         <td className="py-2 text-muted-foreground text-xs hidden sm:table-cell">{formatDateTime(s.opened_at || s.created_at)}</td>
                         <td className="py-2 text-muted-foreground text-xs hidden sm:table-cell">{isOpen ? '—' : formatDateTime(s.closed_at)}</td>

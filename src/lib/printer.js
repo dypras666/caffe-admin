@@ -4,6 +4,36 @@
  * For network printers, sends ESC/POS raw data via fetch to a local print bridge.
  */
 
+/**
+ * Strips variant / addon suffix from product name if variants or addons are present,
+ * preventing duplicate text when variants and addons are rendered on separate lines below.
+ * e.g. "Americano (Ice, Less Sugar)" -> "Americano"
+ */
+export function getCleanProductName(productName, variants = [], addons = []) {
+  if (!productName) return '';
+  let name = String(productName).trim();
+  const varList = Array.isArray(variants) ? variants : [];
+  const addonList = Array.isArray(addons) ? addons : [];
+
+  if (varList.length > 0 || addonList.length > 0) {
+    // If explicit variants given, strip suffix
+    return name.replace(/\s*\([^)]*\)$/, '').trim() || name;
+  }
+  return name;
+}
+
+/**
+ * Sanitizes text to safe ASCII for ESC/POS thermal printers.
+ * Prevents non-ASCII characters (e.g. 'é' in 'Café') from printing as Chinese characters ('茅').
+ */
+export function sanitizeEscPosText(s = '') {
+  if (typeof s !== 'string') return String(s || '');
+  return s
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // Strips diacritics / accents (é -> e)
+    .replace(/[^\x20-\x7E\n\r]/g, ' '); // Keep standard printable ASCII & newlines
+}
+
 // Generate receipt HTML for window.print()
 export function buildReceiptHTML(receipt, printer) {
   const { shop_name, address, phone, currency = 'Rp', order, items } = receipt;
@@ -17,7 +47,7 @@ export function buildReceiptHTML(receipt, printer) {
     return left + ' '.repeat(Math.max(1, space)) + right;
   };
 
-  const headerLines = (printer?.header_text || shop_name || 'Café Azzura').split('\n');
+  const headerLines = (printer?.header_text || shop_name || '').split('\n').filter(Boolean);
   const footerLines = (printer?.footer_text || 'Terima kasih!').split('\n');
 
   let body = `
@@ -47,8 +77,9 @@ export function buildReceiptHTML(receipt, printer) {
     const variantLine = variants.length > 0
       ? variants.map(v => v.option_name || '').filter(Boolean).join(', ')
       : '';
+    const cleanName = getCleanProductName(item.product_name, variants, addons);
     body += `
-      <div class="item-name">${item.product_name}</div>
+      <div class="item-name">${cleanName}</div>
       ${variantLine ? `<div class="small indent">${variantLine}</div>` : ''}
       <div class="row indent">
         <span>${item.quantity} x ${formatMoney(unitPrice)}</span>
@@ -102,13 +133,19 @@ export function buildKitchenHTML(ticket, printer) {
   `;
 
   for (const item of items) {
-    const addons = item.addons_selected ? (typeof item.addons_selected === 'string' ? JSON.parse(item.addons_selected) : item.addons_selected) : [];
+    const variants = item.variants_selected ? (typeof item.variants_selected === 'string' ? JSON.parse(item.variants_selected) : item.variants_selected) : (item.variants || []);
+    const addons = item.addons_selected ? (typeof item.addons_selected === 'string' ? JSON.parse(item.addons_selected) : item.addons_selected) : (item.addons || []);
+    const variantLine = Array.isArray(variants) && variants.length > 0
+      ? variants.map(v => typeof v === 'object' ? (v.option_name || v.name || '') : v).filter(Boolean).join(', ')
+      : '';
+    const cleanName = getCleanProductName(item.product_name, variants, addons);
     body += `
       <div class="item">
         <span class="qty">${item.quantity}x</span>
-        <span class="name">${item.product_name}</span>
+        <span class="name">${cleanName}</span>
       </div>
-      ${addons.length > 0 ? `<div class="note">  + ${addons.map(a => `${a.addon_name}${a.qty > 1 ? ` x${a.qty}` : ''}`).join(', ')}</div>` : ''}
+      ${variantLine ? `<div class="note">  ${variantLine}</div>` : ''}
+      ${addons.length > 0 ? `<div class="note">  + ${addons.map(a => typeof a === 'object' ? `${a.addon_name || a.name || ''}${a.qty > 1 ? ` x${a.qty}` : ''}` : a).join(', ')}</div>` : ''}
       ${item.notes ? `<div class="note">  !! ${item.notes}</div>` : ''}
     `;
   }
@@ -129,39 +166,141 @@ export function buildKitchenHTML(ticket, printer) {
 </html>`;
 }
 
-// Open print window
-export function printHTML(html) {
-  const win = window.open('', '_blank', 'width=400,height=600');
-  if (!win) {
-    alert('Popup diblokir browser. Izinkan popup untuk fitur print.');
-    return;
+// Generate cup / sticker label HTML
+export function buildLabelHTML(labelData, printer) {
+  const { shop_name, order, items = [], raw_items = [] } = labelData;
+  const paperWidth = printer?.paper_width || '58mm';
+  const formatTime = (d) => new Date(d).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+  const formatDate = (d) => new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit' });
+
+  // If items array is empty but raw_items exists, expand them
+  let labelItems = items;
+  if (!labelItems || labelItems.length === 0) {
+    labelItems = [];
+    const sourceList = raw_items.length > 0 ? raw_items : (labelData.raw_items || []);
+    let totalCups = sourceList.reduce((acc, it) => acc + (parseInt(it.quantity) || 1), 0);
+    let idx = 1;
+    for (const it of sourceList) {
+      const q = parseInt(it.quantity) || 1;
+      const variants = it.variants_selected ? (typeof it.variants_selected === 'string' ? JSON.parse(it.variants_selected) : it.variants_selected) : [];
+      const addons = it.addons_selected ? (typeof it.addons_selected === 'string' ? JSON.parse(it.addons_selected) : it.addons_selected) : [];
+      for (let i = 1; i <= q; i++) {
+        labelItems.push({
+          product_name: it.product_name,
+          unit_index: i,
+          unit_total: q,
+          label_number: idx++,
+          label_total: totalCups,
+          variants,
+          addons,
+          notes: it.notes || '',
+        });
+      }
+    }
   }
 
-  // Write HTML and wait for load
-  win.document.open();
-  win.document.write(html);
-  win.document.close();
+  const orderNum = order?.order_number || '-';
+  const orderType = (order?.order_type || 'dine_in').toUpperCase();
+  const table = order?.table_name || order?.table_number ? `Meja ${order.table_name || order.table_number}` : '';
+  const customer = order?.customer_name || '';
+  const outlet = printer?.header_text || shop_name || '';
+  const timeStr = order?.created_at ? `${formatDate(order.created_at)} ${formatTime(order.created_at)}` : `${formatDate(new Date())} ${formatTime(new Date())}`;
 
-  // Wait for window to fully load before printing
-  win.onload = () => {
-    win.focus();
-    // Give extra time for rendering
+  let body = '<div class="labels-wrapper">';
+  for (const item of labelItems) {
+    const variants = Array.isArray(item.variants)
+      ? item.variants.map(v => typeof v === 'object' ? (v.option_name || v.name || '') : v).filter(Boolean).join(', ')
+      : '';
+    const addons = Array.isArray(item.addons)
+      ? item.addons.map(a => typeof a === 'object' ? (a.addon_name || a.name || '') : a).filter(Boolean).join(', ')
+      : '';
+    const cleanName = getCleanProductName(item.product_name, item.variants, item.addons);
+
+    body += `
+      <div class="label-sticker">
+        <div class="lbl-top">
+          <span class="lbl-shop">${outlet}</span>
+          <span class="lbl-type">${orderType}${table ? ` • ${table}` : ''}</span>
+        </div>
+        <div class="lbl-order-row">
+          <span class="lbl-ord-num">#${orderNum}</span>
+          <span class="lbl-badge">${item.label_number || 1}/${item.label_total || 1}</span>
+        </div>
+        ${customer ? `<div class="lbl-cust">Cust: <b>${customer}</b></div>` : ''}
+        <div class="lbl-divider"></div>
+        <div class="lbl-item-name">${cleanName}</div>
+        ${variants ? `<div class="lbl-options">${variants}</div>` : ''}
+        ${addons ? `<div class="lbl-addon">+ ${addons}</div>` : ''}
+        ${item.notes ? `<div class="lbl-note">* ${item.notes}</div>` : ''}
+        <div class="lbl-footer">
+          <span>${timeStr}</span>
+          ${order?.served_by_name ? `<span>Kasir: ${order.served_by_name}</span>` : ''}
+        </div>
+      </div>
+    `;
+  }
+  body += '</div>';
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>${buildLabelCSS(paperWidth)}</style>
+</head>
+<body>${body}</body>
+</html>`;
+}
+
+// Open print dialog via hidden iframe (bypasses popup blockers on Mac/iOS/Windows)
+export function printHTML(html) {
+  try {
+    let iframe = document.getElementById('thermal-print-iframe');
+    if (!iframe) {
+      iframe = document.createElement('iframe');
+      iframe.id = 'thermal-print-iframe';
+      iframe.style.position = 'fixed';
+      iframe.style.right = '0';
+      iframe.style.bottom = '0';
+      iframe.style.width = '0';
+      iframe.style.height = '0';
+      iframe.style.border = '0';
+      iframe.style.opacity = '0';
+      iframe.style.pointerEvents = 'none';
+      document.body.appendChild(iframe);
+    }
+
+    const doc = iframe.contentDocument || iframe.contentWindow.document;
+    doc.open();
+    doc.write(html);
+    doc.close();
+
     setTimeout(() => {
-      win.print();
-      // Close after print dialog is handled
-      setTimeout(() => {
-        win.close();
-      }, 100);
-    }, 500);
-  };
-
-  // Fallback if onload doesn't fire
-  setTimeout(() => {
-    if (win && !win.closed) {
+      try {
+        iframe.contentWindow.focus();
+        iframe.contentWindow.print();
+      } catch (err) {
+        console.error('Iframe print error, falling back to window.open', err);
+        const win = window.open('', '_blank', 'width=400,height=600');
+        if (win) {
+          win.document.open();
+          win.document.write(html);
+          win.document.close();
+          win.focus();
+          win.print();
+        }
+      }
+    }, 250);
+  } catch (e) {
+    console.error('printHTML error', e);
+    const win = window.open('', '_blank', 'width=400,height=600');
+    if (win) {
+      win.document.open();
+      win.document.write(html);
+      win.document.close();
       win.focus();
       win.print();
     }
-  }, 1000);
+  }
 }
 
 // Send to network printer (requires local print bridge server)
@@ -215,6 +354,23 @@ export function getDevicePrinter(type) {
   return getDevicePrinters()[type] || null;
 }
 
+// ─── Device-level Auto-Print preferences ───────────────────────
+const DEVICE_AUTOPRINT_KEY = 'cafe_device_autoprint';
+
+export function getDeviceAutoPrint() {
+  try {
+    const raw = localStorage.getItem(DEVICE_AUTOPRINT_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+export function setDeviceAutoPrint(opts) {
+  try {
+    const cur = getDeviceAutoPrint() || {};
+    localStorage.setItem(DEVICE_AUTOPRINT_KEY, JSON.stringify({ ...cur, ...opts }));
+  } catch {}
+}
+
 // ─── ESC/POS encoder ─────────────────────────────────────────
 // Converts receipt HTML text content to ESC/POS byte commands
 export function buildEscPos(receipt, printer) {
@@ -227,7 +383,7 @@ export function buildEscPos(receipt, printer) {
 
   const bytes = [];
   const push  = (...bs) => bytes.push(...bs);
-  const text  = (s) => bytes.push(...enc.encode(s));
+  const text  = (s) => bytes.push(...enc.encode(sanitizeEscPosText(s)));
   const line  = (s = '') => { text(s); push(0x0A); };
   const divider = () => line('-'.repeat(charW));
 
@@ -281,7 +437,7 @@ export function buildEscPos(receipt, printer) {
     return new Uint8Array(bytes);
   }
 
-  const headerLines = (printer?.header_text || shop_name || 'Café Azzura').split('\n');
+  const headerLines = (printer?.header_text || shop_name || '').split('\n').filter(Boolean);
   headerLines.forEach(l => line(l));
   push(ESC, 0x45, 0x00);        // ESC E 0 — bold off
   if (address) line(address);
@@ -303,7 +459,19 @@ export function buildEscPos(receipt, printer) {
   for (const item of items) {
     const unitPrice = item.unit_price || item.product_price || 0;
     const total = Number(item.subtotal || unitPrice * item.quantity);
-    line(item.product_name.substring(0, charW));
+    const variants = item.variants_selected ? (typeof item.variants_selected === 'string' ? JSON.parse(item.variants_selected) : item.variants_selected) : (item.variants || []);
+    const addons = item.addons_selected ? (typeof item.addons_selected === 'string' ? JSON.parse(item.addons_selected) : item.addons_selected) : (item.addons || []);
+    const variantStr = Array.isArray(variants) && variants.length > 0
+      ? variants.map(v => typeof v === 'object' ? (v.option_name || v.name || '') : v).filter(Boolean).join(', ')
+      : '';
+    const addonStr = Array.isArray(addons) && addons.length > 0
+      ? addons.map(a => typeof a === 'object' ? `${a.addon_name || a.name || ''}${a.qty > 1 ? ` x${a.qty}` : ''}` : a).filter(Boolean).join(', ')
+      : '';
+    const cleanName = getCleanProductName(item.product_name, variants, addons);
+
+    line(cleanName.substring(0, charW));
+    if (variantStr) line(`  ${variantStr}`.substring(0, charW));
+    if (addonStr) line(`  + ${addonStr}`.substring(0, charW));
     line(pad(`  ${item.quantity} x ${money(unitPrice)}`, money(total)));
     if (item.notes) line(`  *${item.notes}`.substring(0, charW));
   }
@@ -331,6 +499,102 @@ export function buildEscPos(receipt, printer) {
   // Feed + cut
   push(0x0A, 0x0A, 0x0A, 0x0A);
   push(GS, 0x56, 0x42, 0x00);   // GS V B 0 — full cut
+
+  return new Uint8Array(bytes);
+}
+
+// ─── ESC/POS Label encoder ──────────────────────────────────
+export function buildLabelEscPos(labelData, printer) {
+  const { shop_name, order, items = [], raw_items = [] } = labelData;
+  const charW = printer?.char_per_line || 32;
+
+  const ESC = 0x1B;
+  const GS  = 0x1D;
+  const enc = new TextEncoder();
+
+  const bytes = [];
+  const push  = (...bs) => bytes.push(...bs);
+  const text  = (s) => bytes.push(...enc.encode(sanitizeEscPosText(s)));
+  const line  = (s = '') => { text(s); push(0x0A); };
+  const divider = () => line('-'.repeat(charW));
+
+  const pad = (left, right, w = charW) => {
+    const gap = w - left.length - right.length;
+    return left + ' '.repeat(Math.max(1, gap)) + right;
+  };
+
+  let labelItems = items;
+  if (!labelItems || labelItems.length === 0) {
+    labelItems = [];
+    const sourceList = raw_items.length > 0 ? raw_items : (labelData.raw_items || []);
+    let totalCups = sourceList.reduce((acc, it) => acc + (parseInt(it.quantity) || 1), 0);
+    let idx = 1;
+    for (const it of sourceList) {
+      const q = parseInt(it.quantity) || 1;
+      const variants = it.variants_selected ? (typeof it.variants_selected === 'string' ? JSON.parse(it.variants_selected) : it.variants_selected) : [];
+      const addons = it.addons_selected ? (typeof it.addons_selected === 'string' ? JSON.parse(it.addons_selected) : it.addons_selected) : [];
+      for (let i = 1; i <= q; i++) {
+        labelItems.push({
+          product_name: it.product_name,
+          unit_index: i,
+          unit_total: q,
+          label_number: idx++,
+          label_total: totalCups,
+          variants,
+          addons,
+          notes: it.notes || '',
+        });
+      }
+    }
+  }
+
+  const outlet = printer?.header_text || shop_name || '';
+  const orderNum = order?.order_number || '-';
+  const dt = order?.created_at
+    ? new Date(order.created_at).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' })
+    : new Date().toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' });
+
+  for (const item of labelItems) {
+    push(ESC, 0x40);        // Init
+    push(ESC, 0x74, 0x00); // Codepage 0
+    push(ESC, 0x61, 0x01); // Center
+    push(ESC, 0x45, 0x01); // Bold on
+    line(outlet);
+    push(ESC, 0x45, 0x00); // Bold off
+
+    push(ESC, 0x61, 0x00); // Left align
+    divider();
+    line(pad(`#${orderNum}`, `[${item.label_number || 1}/${item.label_total || 1}]`));
+    if (order?.customer_name) line(`Cust: ${order.customer_name}`);
+    if (order?.table_name || order?.table_number) line(`Meja: ${order.table_name || order.table_number}`);
+    divider();
+
+    // Item name in double width/height
+    push(ESC, 0x45, 0x01);
+    push(GS, 0x21, 0x11);
+    const cleanName = getCleanProductName(item.product_name, item.variants, item.addons);
+    line(cleanName);
+    push(GS, 0x21, 0x00);
+    push(ESC, 0x45, 0x00);
+
+    const variants = Array.isArray(item.variants)
+      ? item.variants.map(v => typeof v === 'object' ? (v.option_name || v.name || '') : v).filter(Boolean).join(', ')
+      : '';
+    if (variants) line(`  ${variants}`);
+
+    const addons = Array.isArray(item.addons)
+      ? item.addons.map(a => typeof a === 'object' ? (a.addon_name || a.name || '') : a).filter(Boolean).join(', ')
+      : '';
+    if (addons) line(`  + ${addons}`);
+
+    if (item.notes) line(`  * ${item.notes}`);
+    divider();
+    line(pad(dt, order?.served_by_name ? `Kasir: ${order.served_by_name}` : ''));
+
+    // Form feed or 3 lines feed
+    push(0x0A, 0x0A, 0x0A);
+    push(GS, 0x56, 0x41, 0x00); // Partial cut / gap feed
+  }
 
   return new Uint8Array(bytes);
 }
@@ -424,7 +688,7 @@ async function writeInChunks(char, data, chunkSize = 100) {
   }
 }
 
-export async function printViaBluetooth(receipt, printer) {
+export async function printViaBluetooth(receipt, printer, type = 'receipt') {
   if (!navigator.bluetooth) throw new Error('Web Bluetooth tidak didukung');
 
   let deviceId = printer?.bluetooth_device_id;
@@ -465,7 +729,7 @@ export async function printViaBluetooth(receipt, printer) {
     _btCache.set(deviceId, { device, ...cached });
   }
 
-  const escpos = buildEscPos(receipt, printer);
+  const escpos = type === 'label' ? buildLabelEscPos(receipt, printer) : buildEscPos(receipt, printer);
   await writeInChunks(cached.char, escpos);
 }
 
@@ -494,7 +758,7 @@ export async function scanUSBPrinters() {
   };
 }
 
-export async function printViaUSB(receipt, printer) {
+export async function printViaUSB(receipt, printer, type = 'receipt') {
   if (!navigator.usb) throw new Error('Web USB tidak didukung');
   
   const vendorId = printer?.usb_vendor_id;
@@ -539,7 +803,7 @@ export async function printViaUSB(receipt, printer) {
   
   if (outEndpoint === null) throw new Error('Output endpoint USB tidak ditemukan pada printer ini.');
 
-  const escpos = buildEscPos(receipt, printer);
+  const escpos = type === 'label' ? buildLabelEscPos(receipt, printer) : buildEscPos(receipt, printer);
   // Send data in chunks of 64 bytes (common for USB)
   const chunkSize = 64;
   for (let i = 0; i < escpos.length; i += chunkSize) {
@@ -572,13 +836,25 @@ export async function smartPrint(html, sitePrinter, type = 'receipt', receipt = 
       }
     }
   } else if (conn === 'bluetooth') {
-    if (!receipt) throw new Error('Data receipt diperlukan untuk print Bluetooth');
-    await printViaBluetooth(receipt, printer);
+    try {
+      if (!receipt) throw new Error('Data receipt diperlukan untuk print Bluetooth');
+      await printViaBluetooth(receipt, printer, type);
+    } catch (btErr) {
+      console.warn('Bluetooth print failed, falling back to browser print:', btErr);
+      printHTML(html);
+      throw new Error(`Koneksi Bluetooth tidak merespons (${btErr.message}). Dialihkan ke dialog cetak browser.`);
+    }
   } else if (conn === 'usb') {
-    if (!receipt) throw new Error('Data receipt diperlukan untuk print USB');
-    await printViaUSB(receipt, printer);
+    try {
+      if (!receipt) throw new Error('Data receipt diperlukan untuk print USB');
+      await printViaUSB(receipt, printer, type);
+    } catch (usbErr) {
+      console.warn('USB print failed, falling back to browser print:', usbErr);
+      printHTML(html);
+      throw new Error(`Koneksi USB tidak merespons (${usbErr.message}). Dialihkan ke dialog cetak browser.`);
+    }
   } else {
-    // browser — use window.print()
+    // browser — use window.print() via iframe
     printHTML(html);
   }
 }
@@ -658,6 +934,133 @@ export function buildKitchenCSS(paperWidth) {
       @page { margin: 0; size: ${width} auto; }
       body { width: 100%; }
       .cut { display: none; }
+    }
+  `;
+}
+
+/**
+ * Build cup / sticker label CSS
+ */
+export function buildLabelCSS(paperWidth) {
+  const is58 = paperWidth === '58mm';
+  const width = is58 ? '58mm' : '50mm';
+  const height = is58 ? '40mm' : '35mm';
+  return `
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    @page {
+      size: ${width} ${height};
+      margin: 0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, monospace;
+      margin: 0;
+      padding: 0;
+      background: #fff;
+      color: #000;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .labels-wrapper {
+      display: flex;
+      flex-direction: column;
+      gap: 3mm;
+      padding: 2mm;
+    }
+    .label-sticker {
+      width: ${width};
+      min-height: ${height};
+      max-width: 100%;
+      padding: 2mm 3mm;
+      box-sizing: border-box;
+      page-break-after: always;
+      break-after: page;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      border: 1px dashed #bbb;
+      background: #fff;
+      margin: 0 auto;
+    }
+    @media print {
+      body { width: 100%; }
+      .labels-wrapper { padding: 0; gap: 0; }
+      .label-sticker {
+        border: none !important;
+        margin: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+        page-break-after: always;
+        break-after: page;
+      }
+    }
+    .lbl-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 8px;
+      font-weight: 700;
+      border-bottom: 0.8px solid #000;
+      padding-bottom: 1px;
+      margin-bottom: 1.5px;
+      text-transform: uppercase;
+    }
+    .lbl-shop { max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .lbl-type { font-weight: 800; font-size: 8px; }
+    .lbl-order-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+      font-weight: 800;
+      margin-bottom: 1px;
+    }
+    .lbl-badge {
+      font-size: 11px;
+      font-weight: 900;
+      background: #000;
+      color: #fff;
+      padding: 0 4px;
+      border-radius: 2px;
+    }
+    .lbl-cust {
+      font-size: 9px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 1.5px;
+    }
+    .lbl-divider { border-top: 0.5px dashed #000; margin: 1px 0 2px; }
+    .lbl-item-name {
+      font-size: 13px;
+      font-weight: 900;
+      line-height: 1.15;
+      margin: 1px 0;
+      word-break: break-word;
+    }
+    .lbl-options {
+      font-size: 9px;
+      font-weight: 600;
+      line-height: 1.2;
+    }
+    .lbl-addon {
+      font-size: 8.5px;
+      font-weight: 500;
+    }
+    .lbl-note {
+      font-size: 8px;
+      font-style: italic;
+      font-weight: 700;
+    }
+    .lbl-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 7.5px;
+      color: #222;
+      border-top: 0.8px solid #000;
+      padding-top: 1.5px;
+      margin-top: 2px;
     }
   `;
 }

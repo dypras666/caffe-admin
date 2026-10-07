@@ -6,11 +6,13 @@ import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogBody, DialogFooter } from '../components/ui/dialog';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../components/ui/select';
-import { Plus, Pencil, Trash2, Loader2, Users, LayoutGrid, List, Clock, AlertCircle } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, Users, LayoutGrid, List, Clock, AlertCircle, Building2 } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/table';
 import { cn } from '../lib/utils';
+import { useAuth } from '../context/AuthContext';
+import { useGlobalBranch } from '../context/BranchContext';
 
 const STATUS_OPTS = ['available', 'occupied', 'reserved', 'maintenance'];
 const STATUS_LABEL = { available: 'Tersedia', occupied: 'Terisi', reserved: 'Dipesan', maintenance: 'Perawatan' };
@@ -28,11 +30,21 @@ const STATUS_DOT = {
   maintenance: 'bg-gray-400',
 };
 
-const EMPTY = { room_id: '', table_number: '', name: '', capacity: 4, sort_order: 0, is_active: true };
+const EMPTY = { room_id: '', table_number: '', name: '', capacity: 4, sort_order: 0, is_active: true, branch_id: '' };
 
 export default function TablesPage() {
   const [searchParams] = useSearchParams();
   const defaultRoom = searchParams.get('room_id') || 'all';
+
+  const { user } = useAuth();
+  const { branchId: selectedBranchId, setBranchId, isAdmin } = useGlobalBranch();
+  const { data: branchesData } = useFetch('/branches');
+  const branches = branchesData?.branches || [];
+
+  const effectiveBranchId = (selectedBranchId && selectedBranchId !== 'all')
+    ? selectedBranchId
+    : (!isAdmin ? String(user?.branch_id || '') : '');
+  const activeBranchName = branches.find(b => String(b.id) === String(effectiveBranchId))?.name;
 
   const [roomFilter, setRoomFilter] = useState(defaultRoom);
   const [statusFilter, setStatusFilter] = useState('all');
@@ -43,14 +55,30 @@ export default function TablesPage() {
   const [saving, setSaving] = useState(false);
   const [updatingId, setUpdatingId] = useState(null);
 
-  const qs = `${roomFilter !== 'all' ? `?room_id=${roomFilter}` : ''}${statusFilter !== 'all' ? `${roomFilter !== 'all' ? '&' : '?'}status=${statusFilter}` : ''}`;
+  const branchParam = effectiveBranchId ? `branch_id=${effectiveBranchId}` : '';
+  const qsParts = [
+    roomFilter !== 'all' ? `room_id=${roomFilter}` : '',
+    statusFilter !== 'all' ? `status=${statusFilter}` : '',
+    branchParam
+  ].filter(Boolean);
+  const qs = qsParts.length ? `?${qsParts.join('&')}` : '';
+
   const { data, loading, refetch } = useFetch(`/tables${qs}`);
   const { data: roomsData } = useFetch('/rooms');
 
   const tables = data?.tables || [];
   const rooms = roomsData?.rooms || [];
 
-  const openCreate = () => { setForm({ ...EMPTY, room_id: roomFilter !== 'all' ? roomFilter : '' }); setEditId(null); setOpen(true); };
+  const openCreate = () => {
+    setForm({
+      ...EMPTY,
+      room_id: roomFilter !== 'all' ? roomFilter : '',
+      branch_id: effectiveBranchId || (branches[0] ? String(branches[0].id) : ''),
+    });
+    setEditId(null);
+    setOpen(true);
+  };
+
   const openEdit = (t) => {
     setForm({
       room_id: t.room_id ? String(t.room_id) : '',
@@ -59,6 +87,7 @@ export default function TablesPage() {
       capacity: t.capacity,
       sort_order: t.sort_order,
       is_active: !!t.is_active,
+      branch_id: t.branch_id ? String(t.branch_id) : (effectiveBranchId || ''),
     });
     setEditId(t.id);
     setOpen(true);
@@ -73,6 +102,7 @@ export default function TablesPage() {
         room_id: form.room_id ? parseInt(form.room_id) : null,
         capacity: parseInt(form.capacity) || 4,
         sort_order: parseInt(form.sort_order) || 0,
+        branch_id: form.branch_id ? parseInt(form.branch_id) : (effectiveBranchId ? parseInt(effectiveBranchId) : undefined),
       };
       if (editId) await api.put(`/tables/${editId}`, payload);
       else await api.post('/tables', payload);
@@ -126,6 +156,35 @@ export default function TablesPage() {
 
   return (
     <div className="space-y-5">
+      {/* Top Header with Branch Selection */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <h1 className="text-lg font-bold">Manajemen Meja</h1>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {effectiveBranchId
+              ? `Menampilkan meja untuk: ${activeBranchName || '#' + effectiveBranchId}`
+              : 'Menampilkan meja dari semua cabang.'}
+          </p>
+        </div>
+
+        {isAdmin && branches.length > 0 && (
+          <div className="flex items-center gap-2">
+            <Building2 className="w-4 h-4 text-muted-foreground shrink-0" />
+            <Select value={selectedBranchId || 'all'} onValueChange={setBranchId}>
+              <SelectTrigger className="w-52 h-9 text-xs">
+                <SelectValue placeholder="Pilih Cabang" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua Cabang</SelectItem>
+                {branches.map(b => (
+                  <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+      </div>
+
       {/* Status summary */}
       <div className="flex gap-3 flex-wrap">
         {STATUS_OPTS.map(s => (
@@ -195,11 +254,12 @@ export default function TablesPage() {
                     <span className="text-xs text-muted-foreground">{roomTables.length} meja</span>
                     <div className="flex-1 h-px bg-border" />
                   </div>
-                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-3">
                     {roomTables.map(t => (
                       <TableCard
                         key={t.id}
                         table={t}
+                        showBranch={!effectiveBranchId}
                         onEdit={() => openEdit(t)}
                         onDelete={() => handleDelete(t.id)}
                         onStatusChange={(s) => quickStatus(t.id, s)}
@@ -220,9 +280,17 @@ export default function TablesPage() {
                   <h3 className="font-semibold text-sm text-muted-foreground">Tanpa Room</h3>
                   <div className="flex-1 h-px bg-border" />
                 </div>
-                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-3">
                   {noRoom.map(t => (
-                    <TableCard key={t.id} table={t} onEdit={() => openEdit(t)} onDelete={() => handleDelete(t.id)} onStatusChange={(s) => quickStatus(t.id, s)} updating={updatingId === t.id} />
+                    <TableCard
+                      key={t.id}
+                      table={t}
+                      showBranch={!effectiveBranchId}
+                      onEdit={() => openEdit(t)}
+                      onDelete={() => handleDelete(t.id)}
+                      onStatusChange={(s) => quickStatus(t.id, s)}
+                      updating={updatingId === t.id}
+                    />
                   ))}
                 </div>
               </div>
@@ -241,6 +309,7 @@ export default function TablesPage() {
                 <TableRow>
                   <TableHead>No. Meja</TableHead>
                   <TableHead>Nama</TableHead>
+                  <TableHead>Cabang</TableHead>
                   <TableHead>Room</TableHead>
                   <TableHead>Kapasitas</TableHead>
                   <TableHead>Status</TableHead>
@@ -250,7 +319,7 @@ export default function TablesPage() {
               </TableHeader>
               <TableBody>
                 {tables.length === 0 ? (
-                  <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-12">Tidak ada meja</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-12">Tidak ada meja</TableCell></TableRow>
                 ) : tables.map(t => {
                   const hasUnpaid = parseInt(t.unpaid_order_count || 0) > 0;
                   return (
@@ -269,6 +338,14 @@ export default function TablesPage() {
                       )}
                     </TableCell>
                     <TableCell>{t.name || '—'}</TableCell>
+                    <TableCell className="text-xs font-medium text-muted-foreground">
+                      {t.branch_name ? (
+                        <span className="flex items-center gap-1">
+                          <Building2 className="w-3.5 h-3.5 text-primary" />
+                          {t.branch_name}
+                        </span>
+                      ) : '—'}
+                    </TableCell>
                     <TableCell className="text-sm text-muted-foreground">{t.room_name || '—'}</TableCell>
                     <TableCell><div className="flex items-center gap-1"><Users className="w-3 h-3 text-muted-foreground" />{t.capacity}</div></TableCell>
                     <TableCell>
@@ -301,50 +378,65 @@ export default function TablesPage() {
 
       {/* Add / Edit Dialog */}
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="max-w-md p-0 flex flex-col overflow-hidden max-h-[88dvh]">
+          <DialogHeader className="p-4 sm:p-5 pb-3 border-b bg-background shrink-0 m-0">
             <DialogTitle>{editId ? 'Edit Meja' : 'Tambah Meja Baru'}</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleSave} className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">Nomor Meja *</label>
-                <Input value={form.table_number} onChange={e => setForm(f => ({ ...f, table_number: e.target.value }))} required placeholder="T01" />
+          <form onSubmit={handleSave} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+            <DialogBody className="p-4 sm:p-5 space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                {isAdmin && (
+                  <div className="col-span-2">
+                    <label className="text-xs font-medium text-muted-foreground mb-1 block">Cabang *</label>
+                    <Select value={form.branch_id || ''} onValueChange={v => setForm(f => ({ ...f, branch_id: v }))}>
+                      <SelectTrigger><SelectValue placeholder="Pilih cabang..." /></SelectTrigger>
+                      <SelectContent>
+                        {branches.map(b => (
+                          <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Nomor Meja *</label>
+                  <Input value={form.table_number} onChange={e => setForm(f => ({ ...f, table_number: e.target.value }))} required placeholder="T01" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Nama Meja</label>
+                  <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="misal: Meja Sudut" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Kapasitas</label>
+                  <Input type="number" min={1} value={form.capacity} onChange={e => setForm(f => ({ ...f, capacity: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Urutan</label>
+                  <Input type="number" min={0} value={form.sort_order} onChange={e => setForm(f => ({ ...f, sort_order: e.target.value }))} />
+                </div>
+                <div className="col-span-2">
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Room</label>
+                  <Select value={form.room_id || 'none'} onValueChange={v => setForm(f => ({ ...f, room_id: v === 'none' ? '' : v }))}>
+                    <SelectTrigger><SelectValue placeholder="Pilih room" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Tanpa Room</SelectItem>
+                      {rooms.map(r => <SelectItem key={r.id} value={String(r.id)}>{r.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-              <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">Nama Meja</label>
-                <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="misal: Meja Sudut" />
+              <div className="flex items-center gap-2">
+                <input type="checkbox" id="tbl_active" checked={form.is_active} onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))} />
+                <label htmlFor="tbl_active" className="text-sm">Meja aktif</label>
               </div>
-              <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">Kapasitas</label>
-                <Input type="number" min={1} value={form.capacity} onChange={e => setForm(f => ({ ...f, capacity: e.target.value }))} />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">Urutan</label>
-                <Input type="number" min={0} value={form.sort_order} onChange={e => setForm(f => ({ ...f, sort_order: e.target.value }))} />
-              </div>
-              <div className="col-span-2">
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">Room</label>
-                <Select value={form.room_id || 'none'} onValueChange={v => setForm(f => ({ ...f, room_id: v === 'none' ? '' : v }))}>
-                  <SelectTrigger><SelectValue placeholder="Pilih room" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Tanpa Room</SelectItem>
-                    {rooms.map(r => <SelectItem key={r.id} value={String(r.id)}>{r.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <input type="checkbox" id="tbl_active" checked={form.is_active} onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))} />
-              <label htmlFor="tbl_active" className="text-sm">Meja aktif</label>
-            </div>
-            <div className="flex gap-2 justify-end pt-1">
-              <Button type="button" variant="outline" onClick={() => setOpen(false)}>Batal</Button>
-              <Button type="submit" disabled={saving}>
+            </DialogBody>
+            <DialogFooter className="p-3 sm:p-4 border-t bg-muted/20 shrink-0 m-0 flex flex-row items-center justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setOpen(false)} className="h-9 text-xs">Batal</Button>
+              <Button type="submit" disabled={saving} className="h-9 text-xs">
                 {saving && <Loader2 className="w-4 h-4 animate-spin mr-1" />}
                 {editId ? 'Simpan' : 'Tambah Meja'}
               </Button>
-            </div>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
@@ -353,7 +445,7 @@ export default function TablesPage() {
 }
 
 // Grid card component
-function TableCard({ table, onEdit, onDelete, onStatusChange, updating }) {
+function TableCard({ table, onEdit, onDelete, onStatusChange, updating, showBranch }) {
   const hasUnpaid = parseInt(table.unpaid_order_count || 0) > 0;
 
   return (
@@ -374,6 +466,14 @@ function TableCard({ table, onEdit, onDelete, onStatusChange, updating }) {
 
       <p className="font-bold text-sm">{table.table_number}</p>
       {table.name && <p className="text-[10px] truncate opacity-70">{table.name}</p>}
+
+      {showBranch && table.branch_name && (
+        <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 my-0.5 truncate max-w-full font-normal">
+          <Building2 className="w-2.5 h-2.5 mr-0.5 shrink-0" />
+          {table.branch_name}
+        </Badge>
+      )}
+
       <div className="flex items-center gap-0.5 mt-1">
         <Users className="w-3 h-3 opacity-60" />
         <span className="text-[10px] opacity-70">{table.capacity}</span>

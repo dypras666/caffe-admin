@@ -46,6 +46,7 @@ import VouchersPage from './pages/VouchersPage';
 import BackupPage from './pages/BackupPage';
 import NavigationPage from './pages/NavigationPage';
 import AttendanceKioskPage from './pages/AttendanceKioskPage';
+import PublicReceiptPage from './pages/PublicReceiptPage';
 
 function RequireAuth({ children }) {
   const { user, loading } = useAuth();
@@ -124,6 +125,8 @@ function AppRoutes() {
       <Route path="/kiosk" element={<RequireAuth><AttendanceKioskPage /></RequireAuth>} />
       <Route path="/absensi" element={<RequireAuth><AttendanceKioskPage /></RequireAuth>} />
       <Route path="/display/:stationCode" element={<RequireAuth><StationDisplayPage /></RequireAuth>} />
+      {/* Public Digital Receipt for Customers / WhatsApp */}
+      <Route path="/receipt/:orderNumber" element={<PublicReceiptPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

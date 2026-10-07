@@ -25,13 +25,14 @@ export function DialogContent({ className, children, ...props }) {
       <DialogOverlay />
       <DialogPrimitive.Content
         className={cn(
-          'fixed left-[50%] top-[50%] z-50 translate-x-[-50%] translate-y-[-50%] bg-background rounded-xl border shadow-lg w-full max-w-lg max-h-[90vh] overflow-y-auto p-6 duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
+          'fixed left-[50%] top-[50%] z-50 translate-x-[-50%] translate-y-[-50%] bg-background rounded-xl border shadow-lg w-[calc(100vw-2rem)] max-w-lg max-h-[88dvh] overflow-y-auto overscroll-contain p-6 duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
           className
         )}
+        style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-y', ...(props.style || {}) }}
         {...props}
       >
         {children}
-        <DialogPrimitive.Close className="absolute right-4 top-4 rounded-lg p-1 opacity-70 hover:opacity-100 transition-opacity">
+        <DialogPrimitive.Close className="absolute right-4 top-4 rounded-lg p-1 opacity-70 hover:opacity-100 transition-opacity z-20">
           <X className="h-4 w-4" />
         </DialogPrimitive.Close>
       </DialogPrimitive.Content>
@@ -40,7 +41,21 @@ export function DialogContent({ className, children, ...props }) {
 }
 
 export function DialogHeader({ className, ...props }) {
-  return <div className={cn('flex flex-col space-y-1.5 mb-4', className)} {...props} />;
+  return <div className={cn('flex flex-col space-y-1.5 mb-4 shrink-0', className)} {...props} />;
+}
+
+export function DialogBody({ className, ...props }) {
+  return (
+    <div
+      className={cn('flex-1 overflow-y-auto overscroll-contain pr-1', className)}
+      style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-y', ...(props.style || {}) }}
+      {...props}
+    />
+  );
+}
+
+export function DialogFooter({ className, ...props }) {
+  return <div className={cn('flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2 pt-4 shrink-0 mt-auto border-t', className)} {...props} />;
 }
 
 export function DialogTitle({ className, ...props }) {

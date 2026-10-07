@@ -6,7 +6,9 @@ import { useAuth } from '../context/AuthContext';
 import { usePermissions } from '../context/PermissionsContext';
 import { useShiftGuard } from '../hooks/useShiftGuard';
 import api from '../lib/api';
-import { buildReceiptHTML, buildKitchenHTML, smartPrint } from '../lib/printer';
+import { buildReceiptHTML, buildKitchenHTML, buildLabelHTML, smartPrint } from '../lib/printer';
+import WhatsAppReceiptModal from '../components/WhatsAppReceiptModal';
+import ManualLabelPrintModal from '../components/ManualLabelPrintModal';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/table';
@@ -14,7 +16,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '.
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { Input } from '../components/ui/input';
 import { ServerSelect } from '../components/ui/server-select';
-import { Loader2, RefreshCw, ChevronLeft, ChevronRight, ShoppingBag, TrendingUp, Clock, XCircle, Printer, X, Plus, Minus, Trash2, AlertCircle, Scissors, FileSpreadsheet, FileText, Wallet, Volume2 } from 'lucide-react';
+import { Loader2, RefreshCw, ChevronLeft, ChevronRight, ShoppingBag, TrendingUp, Clock, XCircle, Printer, X, Plus, Minus, Trash2, AlertCircle, Scissors, FileSpreadsheet, FileText, Wallet, Volume2, Tag, MessageCircle, SlidersHorizontal } from 'lucide-react';
 import { useToast } from '../components/ui/toast';
 import { exportOrdersPDF, exportOrdersExcel } from '../lib/export';
 
@@ -199,7 +201,8 @@ function CancelRequestsPanel({ onClose, onUpdated }) {
   );
 }
 
-export function OrderDetailPanel({ orderId, onClose, onStatusUpdated, autoOpenPayment }) {
+export function OrderDetailPanel({ orderId, onClose, onStatusUpdated, autoOpenPayment, onShareWhatsApp, onOpenManualLabel }) {
+  const toast = useToast();
   const { can } = usePermissions();
   const navigate = useNavigate();
   const canUpdateStatus = can('update_status', 'orders');
@@ -422,8 +425,7 @@ export function OrderDetailPanel({ orderId, onClose, onStatusUpdated, autoOpenPa
     const mod = variants.reduce((s, v) => s + (v.price_modifier || 0), 0);
     const addonsUnit = addons.reduce((s, a) => s + (a.unit_price || 0) * (a.qty || 1), 0);
     const unitPrice = parseFloat(variantProduct.price) + mod;
-    const varLabel = variants.map(v => v.option_name).join(', ');
-    const name = varLabel ? `${variantProduct.name} (${varLabel})` : variantProduct.name;
+    const name = variantProduct.name;
     const product = { ...variantProduct, name, price: unitPrice };
 
     // Directly add to editItems (don't go through selectedProduct state)
@@ -729,7 +731,9 @@ export function OrderDetailPanel({ orderId, onClose, onStatusUpdated, autoOpenPa
                           ? Object.values(addonRaw).flat()
                           : [];
                       // Base product name (strip variant suffix if already embedded)
-                      const baseName = item.product_name;
+                      const baseName = (variantList.length > 0 || addonList.length > 0)
+                        ? item.product_name.replace(/\s*\([^)]*\)$/, '').trim() || item.product_name
+                        : item.product_name;
                       return (
                         <div key={item.id} className="text-sm">
                           <div className="flex justify-between items-start gap-2">
@@ -755,7 +759,15 @@ export function OrderDetailPanel({ orderId, onClose, onStatusUpdated, autoOpenPa
                             </p>
                           )}
                           {item.notes && <p className="text-xs text-muted-foreground italic mt-0.5">"{item.notes}"</p>}
-                          <div className="flex justify-end mt-0.5">
+                          <div className="flex justify-between items-center mt-1">
+                            <button
+                              type="button"
+                              className="text-[11px] text-muted-foreground hover:text-indigo-600 flex items-center gap-1 transition-colors"
+                              title="Pilih dan cetak label item ini"
+                              onClick={() => onOpenManualLabel ? onOpenManualLabel(detail.id) : null}
+                            >
+                              <Tag className="w-3 h-3 text-indigo-500" /> Cetak Label Item ({item.quantity}x)
+                            </button>
                             <span className="font-semibold">{formatRp(item.subtotal)}</span>
                           </div>
                         </div>
@@ -859,17 +871,59 @@ export function OrderDetailPanel({ orderId, onClose, onStatusUpdated, autoOpenPa
                 )}
               </div>
 
-              {/* Print buttons */}
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" className="flex-1 gap-1.5 text-xs"
-                  onClick={async () => { try { const r = await api.get(`/printers/receipt/${detail.id}`); await smartPrint(buildReceiptHTML(r.data.receipt, r.data.printer), r.data.printer, 'receipt'); } catch {} }}>
+              {/* Print & Share buttons */}
+              <div className="grid grid-cols-2 gap-2">
+                <Button variant="outline" size="sm" className="gap-1.5 text-xs"
+                  onClick={async () => {
+                    try {
+                      const r = await api.get(`/printers/receipt/${detail.id}`);
+                      await smartPrint(buildReceiptHTML(r.data.receipt, r.data.printer), r.data.printer, 'receipt', r.data.receipt);
+                    } catch (err) {
+                      toast.error('Cetak struk: ' + (err.response?.data?.error || err.message));
+                    }
+                  }}>
                   <Printer className="w-3.5 h-3.5" /> Print Struk
                 </Button>
-                <Button variant="outline" size="sm" className="flex-1 gap-1.5 text-xs"
-                  onClick={async () => { try { const r = await api.get(`/printers/kitchen/${detail.id}`); await smartPrint(buildKitchenHTML(r.data.order, r.data.printer), r.data.printer, 'kitchen'); } catch {} }}>
+                <Button variant="outline" size="sm" className="gap-1.5 text-xs"
+                  onClick={async () => {
+                    try {
+                      const r = await api.get(`/printers/kitchen/${detail.id}`);
+                      await smartPrint(buildKitchenHTML(r.data.order, r.data.printer), r.data.printer, 'kitchen', r.data.order);
+                    } catch (err) {
+                      toast.error('Cetak dapur: ' + (err.response?.data?.error || err.message));
+                    }
+                  }}>
                   <Printer className="w-3.5 h-3.5" /> Print Dapur
                 </Button>
+                <Button variant="outline" size="sm" className="gap-1.5 text-xs text-indigo-700 hover:text-indigo-800"
+                  title="Cetak semua label cup langsung"
+                  onClick={async () => {
+                    try {
+                      const l = await api.get(`/printers/label/${detail.id}`);
+                      const lData = l.data.label_data || l.data.labelData;
+                      await smartPrint(buildLabelHTML(lData, l.data.printer), l.data.printer, 'label', lData);
+                    } catch (e) {
+                      toast.error('Cetak label: ' + (e.response?.data?.error || e.message));
+                    }
+                  }}>
+                  <Tag className="w-3.5 h-3.5" /> Print Label
+                </Button>
+                <Button variant="outline" size="sm" className="gap-1.5 text-xs text-emerald-700 hover:text-emerald-800"
+                  onClick={() => onShareWhatsApp && onShareWhatsApp(detail)}>
+                  <MessageCircle className="w-3.5 h-3.5" /> Share WA
+                </Button>
               </div>
+
+              {/* Opsi Pilih Cup / Cetak Manual */}
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full gap-1.5 text-xs text-indigo-700 hover:text-indigo-800 border-indigo-200 hover:bg-indigo-50 font-medium"
+                title="Pilih item cup tertentu dan atur jumlah salinan cetak label"
+                onClick={() => onOpenManualLabel && onOpenManualLabel(detail.id)}
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5" /> Pilih Cup / Cetak Label Manual
+              </Button>
 
               {/* Split Bill button */}
               {['ready', 'completed'].includes(detail.order_status) && (
@@ -937,6 +991,13 @@ export default function OrdersPage() {
   const [openPaymentForId, setOpenPaymentForId] = useState(null);
   const [cancelPanelOpen, setCancelPanelOpen] = useState(false);
   const [cancelRequestCount, setCancelRequestCount] = useState(0);
+  const [whatsappModalOpen, setWhatsappModalOpen] = useState(false);
+  const [whatsappTargetOrder, setWhatsappTargetOrder] = useState(null);
+  const [manualLabelModalOpen, setManualLabelModalOpen] = useState(false);
+  const [manualLabelOrderId, setManualLabelOrderId] = useState(null);
+
+  const { data: settingsData } = useFetch('/settings');
+  const settings = (settingsData?.settings || []).reduce((a, s) => ({ ...a, [s.setting_key]: s.setting_value }), {});
 
   const qs = [
     `page=${page}`, 'limit=10',
@@ -1231,9 +1292,20 @@ export default function OrdersPage() {
                     <TableCell className="text-xs text-muted-foreground">{formatDate(order.created_at)}</TableCell>
                     <TableCell onClick={e => e.stopPropagation()}>
                       <div className="flex gap-1">
-                        <Button variant="ghost" size="icon" className="h-7 w-7" title="Struk"
-                          onClick={async () => { try { const r = await api.get(`/printers/receipt/${order.id}`); await smartPrint(buildReceiptHTML(r.data.receipt, r.data.printer), r.data.printer, 'receipt'); } catch {} }}>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" title="Print Struk"
+                          onClick={async () => { try { const r = await api.get(`/printers/receipt/${order.id}`); await smartPrint(buildReceiptHTML(r.data.receipt, r.data.printer), r.data.printer, 'receipt', r.data.receipt); } catch {} }}>
                           <Printer className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50" title="Cetak Label Cup (Pilih Manual / Semua)"
+                          onClick={() => {
+                            setManualLabelOrderId(order.id);
+                            setManualLabelModalOpen(true);
+                          }}>
+                          <Tag className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50" title="Share Nota via WhatsApp"
+                          onClick={() => { setWhatsappTargetOrder(order); setWhatsappModalOpen(true); }}>
+                          <MessageCircle className="w-3.5 h-3.5" />
                         </Button>
                       </div>
                     </TableCell>
@@ -1330,6 +1402,20 @@ export default function OrdersPage() {
             setOpenPaymentForId(null);
           }}
           onStatusUpdated={refetch}
+          onShareWhatsApp={(ord) => { setWhatsappTargetOrder(ord); setWhatsappModalOpen(true); }}
+          onOpenManualLabel={(id) => { setManualLabelOrderId(id); setManualLabelModalOpen(true); }}
+        />
+      )}
+
+      {/* Manual Label Print Modal */}
+      {manualLabelModalOpen && manualLabelOrderId && (
+        <ManualLabelPrintModal
+          open={manualLabelModalOpen}
+          orderId={manualLabelOrderId}
+          onClose={() => {
+            setManualLabelModalOpen(false);
+            setManualLabelOrderId(null);
+          }}
         />
       )}
 
@@ -1343,6 +1429,19 @@ export default function OrdersPage() {
               .then(r => { const list = r.data.requests || r.data || []; setCancelRequestCount(Array.isArray(list) ? list.length : 0); })
               .catch(() => {});
           }}
+        />
+      )}
+      {/* WhatsApp Receipt Modal */}
+      {whatsappModalOpen && whatsappTargetOrder && (
+        <WhatsAppReceiptModal
+          open={whatsappModalOpen}
+          onClose={() => { setWhatsappModalOpen(false); setWhatsappTargetOrder(null); }}
+          order={whatsappTargetOrder}
+          items={whatsappTargetOrder.items || []}
+          shopName={settings.cafe_name || settings.site_name || sessionStorage.getItem('admin_cafe_name') || ''}
+          address={settings.cafe_address || settings.contact_address || ''}
+          phone={settings.contact_phone || ''}
+          currency={settings.currency_symbol || 'Rp'}
         />
       )}
     </div>

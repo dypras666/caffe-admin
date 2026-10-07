@@ -9,7 +9,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogBody, DialogFooter } from './ui/dialog';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from './ui/select';
@@ -20,19 +20,21 @@ import {
 } from 'lucide-react';
 import {
   getDevicePrinter, setDevicePrinter, removeDevicePrinter,
+  getDeviceAutoPrint, setDeviceAutoPrint,
   scanBluetoothPrinters, scanUSBPrinters,
-  smartPrint, buildReceiptHTML, printViaBluetooth,
+  smartPrint, buildReceiptHTML, buildLabelHTML, printViaBluetooth,
 } from '../lib/printer';
 
 const TYPES = [
   { key: 'receipt', label: 'Struk' },
   { key: 'kitchen', label: 'Dapur' },
+  { key: 'label',   label: 'Label Cup/Stiker' },
 ];
 
 const CONN_OPTIONS = [
-  { value: 'browser',   label: 'Browser (window.print)',  icon: Monitor,   desc: 'Print dialog bawaan browser' },
-  { value: 'network',   label: 'Network / IP',            icon: Wifi,      desc: 'Printer di jaringan lokal via IP' },
-  { value: 'bluetooth', label: 'Bluetooth',               icon: Bluetooth, desc: 'Web Bluetooth API (Chrome/Edge)' },
+  { value: 'browser',   label: 'Browser (window.print)',  icon: Monitor,   desc: 'Dialog cetak macOS / browser (Paling direkomendasikan untuk Mac)' },
+  { value: 'network',   label: 'Network / IP',            icon: Wifi,      desc: 'Printer di jaringan lokal via IP LAN/WiFi' },
+  { value: 'bluetooth', label: 'Bluetooth',               icon: Bluetooth, desc: 'Web Bluetooth BLE (Perangkat BLE/Android)' },
   { value: 'usb',       label: 'USB',                     icon: Usb,       desc: 'Web USB API (Chrome/Edge)' },
 ];
 
@@ -190,17 +192,43 @@ function ConfigureDialog({ type, label, existing, onSave, onClose }) {
     items: [{ product_name: 'Test Item', quantity: 1, unit_price: 25000, subtotal: 25000 }],
   };
 
+  const TEST_LABEL = {
+    shop_name: 'TEST KAFE',
+    order: {
+      order_number: 'TEST-01',
+      order_type: 'dine_in',
+      table_name: 'Meja 1',
+      customer_name: 'Test Customer',
+      created_at: new Date().toISOString(),
+    },
+    items: [
+      {
+        product_name: 'Kopi Susu Test',
+        unit_index: 1,
+        unit_total: 1,
+        label_number: 1,
+        label_total: 1,
+        variants: [{ option_name: 'Less Ice' }],
+        addons: [{ addon_name: 'Extra Shot' }],
+        notes: 'Test label cup',
+      }
+    ]
+  };
+
   const handleTest = async () => {
     setTesting(true);
     setTestResult(null);
     try {
       const printer = printerFromForm(form);
+      const testData = type === 'label' ? TEST_LABEL : TEST_RECEIPT;
       if (form.connection === 'bluetooth') {
-        // Bluetooth: send ESC/POS directly — no HTML needed
-        await printViaBluetooth(TEST_RECEIPT, printer);
+        // Bluetooth: send ESC/POS directly
+        await printViaBluetooth(testData, printer, type);
       } else {
-        const testHtml = buildReceiptHTML(TEST_RECEIPT, printer);
-        await smartPrint(testHtml, null, type);
+        const testHtml = type === 'label'
+          ? buildLabelHTML(testData, printer)
+          : buildReceiptHTML(testData, printer);
+        await smartPrint(testHtml, null, type, testData);
       }
       setTestResult('ok');
     } catch (e) {
@@ -223,18 +251,18 @@ function ConfigureDialog({ type, label, existing, onSave, onClose }) {
 
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
+      <DialogContent className="max-w-lg p-0 flex flex-col overflow-hidden max-h-[88dvh]">
+        <DialogHeader className="p-4 sm:p-5 pb-3 border-b bg-background shrink-0 m-0">
           <DialogTitle className="flex items-center gap-2">
-            <Printer className="w-4 h-4" />
+            <Printer className="w-4 h-4 text-primary" />
             Konfigurasi Printer {label}
           </DialogTitle>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-muted-foreground mt-0.5">
             Tersimpan di browser ini saja — tidak mempengaruhi perangkat lain.
           </p>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <DialogBody className="p-4 sm:p-5 space-y-4">
           {/* Name */}
           <div>
             <label className="text-xs font-medium text-muted-foreground mb-1 block">Nama Printer</label>
@@ -358,17 +386,19 @@ function ConfigureDialog({ type, label, existing, onSave, onClose }) {
               {testResult === 'ok' ? 'Test print berhasil!' : testResult}
             </div>
           )}
+        </DialogBody>
 
-          <div className="flex gap-2 pt-1">
-            <Button type="button" variant="outline" size="sm" className="gap-1.5 h-9"
-              onClick={handleTest} disabled={testing}>
-              {testing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
-              Test Print
-            </Button>
-            <Button type="button" variant="outline" onClick={onClose} className="h-9">Batal</Button>
-            <Button type="button" onClick={handleSave} className="flex-1 h-9">Simpan</Button>
+        <DialogFooter className="p-3 sm:p-4 border-t bg-muted/20 shrink-0 m-0 flex flex-row items-center justify-between gap-2">
+          <Button type="button" variant="outline" size="sm" className="gap-1.5 h-9 text-xs"
+            onClick={handleTest} disabled={testing}>
+            {testing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
+            Test Print
+          </Button>
+          <div className="flex items-center gap-2">
+            <Button type="button" variant="outline" onClick={onClose} className="h-9 text-xs">Batal</Button>
+            <Button type="button" onClick={handleSave} className="h-9 text-xs min-w-[80px]">Simpan</Button>
           </div>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -378,6 +408,13 @@ function ConfigureDialog({ type, label, existing, onSave, onClose }) {
 export default function DevicePrinterSettings({ trigger }) {
   const [open, setOpen] = useState(false);
   const [configuring, setConfiguring] = useState(null); // { type, existing, label, onRefresh }
+  const [deviceAuto, setDeviceAuto] = useState(() => getDeviceAutoPrint() || { receipt: true, kitchen: true, label: false });
+
+  const toggleDeviceAuto = (key) => {
+    const next = { ...deviceAuto, [key]: !deviceAuto[key] };
+    setDeviceAuto(next);
+    setDeviceAutoPrint(next);
+  };
 
   const handleConfigure = (type, existing, onRefresh) => {
     const label = TYPES.find(t => t.key === type)?.label || type;
@@ -397,31 +434,81 @@ export default function DevicePrinterSettings({ trigger }) {
       }
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
+        <DialogContent className="max-w-xl p-0 flex flex-col overflow-hidden max-h-[88dvh]">
+          <DialogHeader className="p-4 sm:p-5 pb-3 border-b bg-background shrink-0 m-0">
             <DialogTitle className="flex items-center gap-2">
-              <Printer className="w-4 h-4" />
+              <Printer className="w-4 h-4 text-primary" />
               Pengaturan Printer — Perangkat Ini
             </DialogTitle>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-muted-foreground mt-0.5">
               Konfigurasi ini hanya berlaku di browser/perangkat ini. Setiap kasir bisa punya printer berbeda.
             </p>
           </DialogHeader>
 
-          <div className="space-y-3">
-            {TYPES.map(t => (
-              <PrinterTypeCard
-                key={t.key}
-                type={t.key}
-                label={t.label}
-                onConfigure={handleConfigure}
-              />
-            ))}
-          </div>
+          <DialogBody className="p-4 sm:p-5 space-y-4">
+            <div className="space-y-3">
+              {TYPES.map(t => (
+                <PrinterTypeCard
+                  key={t.key}
+                  type={t.key}
+                  label={t.label}
+                  onConfigure={handleConfigure}
+                />
+              ))}
+            </div>
 
-          <div className="border-t pt-3 text-xs text-muted-foreground">
-            Jika tidak dikonfigurasi, printer default site akan digunakan sebagai fallback.
-          </div>
+            {/* Opsi Otomatisasi Perangkat Ini */}
+            <div className="bg-muted/40 rounded-xl p-3 border space-y-2 text-xs">
+              <div className="font-semibold text-foreground flex items-center justify-between">
+                <span>Cetak Otomatis saat Bayar (Browser Ini):</span>
+                <Badge variant="outline" className="text-[10px]">Lokal</Badge>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={!!deviceAuto.receipt}
+                    onChange={() => toggleDeviceAuto('receipt')}
+                    className="rounded text-primary"
+                  />
+                  <span>Auto Struk</span>
+                </label>
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={!!deviceAuto.kitchen}
+                    onChange={() => toggleDeviceAuto('kitchen')}
+                    className="rounded text-primary"
+                  />
+                  <span>Auto Dapur</span>
+                </label>
+                <label className="flex items-center gap-1.5 cursor-pointer font-medium text-indigo-700">
+                  <input
+                    type="checkbox"
+                    checked={!!deviceAuto.label}
+                    onChange={() => toggleDeviceAuto('label')}
+                    className="rounded text-primary"
+                  />
+                  <span>Auto Label Cup</span>
+                </label>
+              </div>
+            </div>
+
+            <div className="border-t pt-2 space-y-1 text-[11px] text-muted-foreground">
+              <p>
+                <strong>Tips Mac &amp; Tablet:</strong> Printer thermal Bluetooth pada umumnya menggunakan Bluetooth Classic (SPP) yang tidak didukung Web Bluetooth browser Mac/iOS. Disarankan memilih koneksi <strong>Browser (window.print)</strong> atau <strong>Network / IP</strong> agar cetak langsung lancar.
+              </p>
+              <p className="text-[10px] opacity-75">
+                Jika belum dikonfigurasi, printer default sistem akan digunakan sebagai fallback.
+              </p>
+            </div>
+          </DialogBody>
+
+          <DialogFooter className="p-3 sm:p-4 border-t bg-muted/20 shrink-0 m-0 flex justify-end">
+            <Button variant="outline" size="sm" onClick={() => setOpen(false)} className="text-xs h-9 px-4">
+              Tutup
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

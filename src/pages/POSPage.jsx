@@ -3,7 +3,10 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useFetch, useDebounce } from '../hooks/useApi';
 import api from '../lib/api';
 import { cn } from '../lib/utils';
-import { buildReceiptHTML, buildKitchenHTML, smartPrint } from '../lib/printer';
+import { buildReceiptHTML, buildKitchenHTML, buildLabelHTML, smartPrint, getDeviceAutoPrint } from '../lib/printer';
+import WhatsAppReceiptModal from '../components/WhatsAppReceiptModal';
+import OrderSuccessModal from '../components/OrderSuccessModal';
+import ManualLabelPrintModal from '../components/ManualLabelPrintModal';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
@@ -15,7 +18,8 @@ import {
   Search, Plus, Minus, Trash2, ShoppingCart, CreditCard,
   Loader2, ChevronDown, Tag, X, Check, Coffee,
   Utensils, Receipt, Layers, User, UserPlus, Phone, Star, Wallet, QrCode, Clock, Building2, Gift, Sparkles, Ticket, TrendingUp, AlertTriangle,
-  Maximize, Minimize, Store, AlertCircle, CalendarCheck } from 'lucide-react';
+  Maximize, Minimize, Store, AlertCircle, CalendarCheck, MessageCircle, Smartphone, Banknote,
+  Printer, SlidersHorizontal } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useGlobalBranch } from '../context/BranchContext';
 
@@ -96,6 +100,7 @@ export default function POSPage() {
   const [orderType, setOrderType] = useState('dine-in');
   const [selectedTable, setSelectedTable] = useState(null);
   const [customerName, setCustomerName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
   const [notes, setNotes] = useState('');
   const [discount, setDiscount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('cash');
@@ -119,6 +124,13 @@ export default function POSPage() {
   const [pointsPreview, setPointsPreview] = useState(null);   // { points, rule, already_claimed }
   const [claimingPoints, setClaimingPoints] = useState(false);
   const [appliedVoucher, setAppliedVoucher] = useState(null);
+  const [whatsappModalOpen, setWhatsappModalOpen] = useState(false);
+  const [whatsappTargetOrder, setWhatsappTargetOrder] = useState(null);
+  const [successModalOpen, setSuccessModalOpen] = useState(false);
+  const [completedOrder, setCompletedOrder] = useState(null);
+  const [manualLabelModalOpen, setManualLabelModalOpen] = useState(false);
+  const [manualLabelOrderId, setManualLabelOrderId] = useState(null);
+  const [autoPrintedStatus, setAutoPrintedStatus] = useState({ receipt: false, kitchen: false, label: false });
 
   const { user: currentUser } = useAuth();
   const { branchId: effectiveBranchId, setBranchId: setAdminBranchId, isAdmin } = useGlobalBranch();
@@ -240,6 +252,7 @@ export default function POSPage() {
       if (!order) return;
       setEditingOrder(order);
       setCustomerName(order.customer_name || '');
+      setCustomerPhone(order.customer_phone || order.phone || '');
       setNotes(order.notes || '');
       setOrderType(order.order_type || 'dine-in');
       setDiscount(order.discount ? String(order.discount) : '');
@@ -256,8 +269,9 @@ export default function POSPage() {
         const variants = parseF(item.variants_selected);
         const addons   = parseF(item.addons_selected);
         const addonsPerUnit = addons.reduce((s, a) => s + (a.unit_price || 0) * (a.qty || 1), 0);
-        const varLabel = variants.map(v => v.option_name).join(', ');
-        const name = varLabel ? `${item.product_name.replace(/ \(.*\)$/, '')} (${varLabel})` : item.product_name;
+        const name = (variants.length > 0 || addons.length > 0)
+          ? item.product_name.replace(/\s*\([^)]*\)$/, '').trim() || item.product_name
+          : item.product_name;
         return {
           cartKey: `${item.product_id}_edit_${item.id}`,
           id: item.product_id,
@@ -319,8 +333,7 @@ export default function POSPage() {
     const mod         = variants.reduce((s, v) => s + (v.price_modifier || 0), 0);
     const addonsUnit  = addons.reduce((s, a) => s + (a.unit_price || 0) * (a.qty || 1), 0);
     const unitPrice   = parseFloat(product.price) + mod;
-    const vLabel      = variants.map(v => v.option_name).join(', ');
-    const name        = vLabel ? `${product.name} (${vLabel})` : product.name;
+    const name        = product.name;
     const key         = makeKey(product.id, variants, addons);
     setCart(c => {
       const ex = c.find(i => i.cartKey === key);
@@ -446,15 +459,21 @@ export default function POSPage() {
   };
 
   const clearCart = () => {
-    setCart([]); setCustomerName(''); setNotes(''); setDiscount('');
+    setCart([]); setCustomerName(''); setCustomerPhone(''); setNotes(''); setDiscount('');
     setSelectedTable(null); setSelectedMember(null); setPointsPreview(null); setAppliedVoucher(null);
     setServiceDate(''); setServiceTime(''); setServicePersonCount('');
   };
 
   const onMemberSelect = (member) => {
     setSelectedMember(member);
-    if (member) setCustomerName(member.name);
-    else { setCustomerName(''); setPointsPreview(null); }
+    if (member) {
+      setCustomerName(member.name || '');
+      setCustomerPhone(member.phone || '');
+    } else {
+      setCustomerName('');
+      setCustomerPhone('');
+      setPointsPreview(null);
+    }
   };
 
   const handleClaimPoints = async () => {
@@ -469,7 +488,7 @@ export default function POSPage() {
     } finally { setClaimingPoints(false); }
   };
 
-  const placeOrder = async (printReceipt = false, printKitchen = false, paymentDetails = {}) => {
+  const placeOrder = async (printReceipt = false, printKitchen = false, printLabel = false, paymentDetails = {}) => {
     if (!cart.length) return;
     if (requireTable && orderType === 'dine-in' && !selectedTable) {
       toast.warning('Wajib pilih meja untuk dine-in'); setTablePickerOpen(true); return;
@@ -493,11 +512,16 @@ export default function POSPage() {
         toast.success('Pesanan berhasil diperbarui!');
       } else {
         // ── Create mode: new order ────────────────────────────────
+        const phoneRegex = /^(\+?62|08)[0-9\s-]{7,14}$/;
+        const nameIsPhone = phoneRegex.test(String(customerName || '').trim());
+        const resolvedPhone = customerPhone?.trim() || selectedMember?.phone?.trim() || (nameIsPhone ? customerName.trim() : null);
+        const resolvedName = nameIsPhone ? (selectedMember?.name || 'Umum') : (customerName?.trim() || 'Umum');
+
         const res = await api.post('/orders', {
           branch_id: effectiveBranchId,
-          customer_name: customerName || 'Umum',
+          customer_name: resolvedName,
           customer_email: selectedMember?.email || null,
-          customer_phone: selectedMember?.phone || null,
+          customer_phone: resolvedPhone,
           order_type: orderType,
           table_number: selectedTable?.table_number || null,
           table_id: selectedTable?.id || null,
@@ -521,21 +545,35 @@ export default function POSPage() {
             addons:   (i.addons  || []).map(a => ({ addon_id: a.addon_id, qty: a.qty })),
           })),
         });
-        order = res.data.order;
+        const rawOrder = res.data.order || { id: res.data.order_id };
+        order = {
+          ...rawOrder,
+          customer_name: rawOrder.customer_name || resolvedName,
+          customer_phone: rawOrder.customer_phone || resolvedPhone,
+          phone: rawOrder.customer_phone || resolvedPhone,
+          customerPhone: rawOrder.customer_phone || resolvedPhone,
+        };
         setLastOrder(order);
       }
 
-      if (printReceipt || settings.pos_auto_print_receipt === 'true') {
+      if (printReceipt) {
         try {
           const r = await api.get(`/printers/receipt/${order.id}`);
           await smartPrint(buildReceiptHTML(r.data.receipt, r.data.printer), r.data.printer, 'receipt', r.data.receipt);
         } catch (e) { console.error('Print receipt failed', e); }
       }
-      if (printKitchen || settings.pos_auto_print_kitchen === 'true') {
+      if (printKitchen) {
         try {
           const k = await api.get(`/printers/kitchen/${order.id}`);
           await smartPrint(buildKitchenHTML(k.data.ticket, k.data.printer), k.data.printer, 'kitchen', k.data.ticket);
         } catch (e) { console.error('Print kitchen failed', e); }
+      }
+      if (printLabel) {
+        try {
+          const l = await api.get(`/printers/label/${order.id}`);
+          const lData = l.data.label_data || l.data.labelData;
+          await smartPrint(buildLabelHTML(lData, l.data.printer), l.data.printer, 'label', lData);
+        } catch (e) { console.error('Print label failed', e); }
       }
 
       setCheckoutOpen(false);
@@ -558,6 +596,20 @@ export default function POSPage() {
       
       const isPending = paymentMethod === 'pending';
       toast.success(isPending ? 'Order dibuat — menunggu pembayaran' : 'Order berhasil dibuat!');
+
+      if (!isPending) {
+        setCompletedOrder({
+          ...order,
+          cashReceived: paymentDetails?.cashReceived || order.total,
+          changeAmount: paymentDetails?.changeAmount || 0,
+        });
+        setAutoPrintedStatus({
+          receipt: !!printReceipt,
+          kitchen: !!printKitchen,
+          label: !!printLabel,
+        });
+        setSuccessModalOpen(true);
+      }
     } catch (err) {
       toast.error(err.response?.data?.error || err.response?.data?.errors?.[0]?.msg || 'Gagal membuat order');
     } finally { setPlacing(false); }
@@ -746,6 +798,7 @@ export default function POSPage() {
           cart={cart} orderType={orderType} setOrderType={setOrderType}
           selectedTable={selectedTable} setSelectedTable={setSelectedTable}
           customerName={customerName} setCustomerName={setCustomerName}
+          customerPhone={customerPhone} setCustomerPhone={setCustomerPhone}
           selectedMember={selectedMember} onMemberSelect={onMemberSelect}
           discount={discount} setDiscount={setDiscount}
           requireTable={requireTable} tables={tables}
@@ -758,6 +811,7 @@ export default function POSPage() {
           onTablePicker={() => setTablePickerOpen(true)}
           lastOrder={lastOrder}
           onClearLastOrder={() => setLastOrder(null)}
+          onOpenManualLabel={(id) => { setManualLabelOrderId(id); setManualLabelModalOpen(true); }}
           pointsPreview={pointsPreview}
           onClaimPoints={handleClaimPoints}
           claimingPoints={claimingPoints}
@@ -771,6 +825,7 @@ export default function POSPage() {
           serviceDate={serviceDate} setServiceDate={setServiceDate}
           serviceTime={serviceTime} setServiceTime={setServiceTime}
           servicePersonCount={servicePersonCount} setServicePersonCount={setServicePersonCount}
+          onShareWhatsApp={(ord) => { setWhatsappTargetOrder(ord); setWhatsappModalOpen(true); }}
         />
       </div>
 
@@ -809,6 +864,7 @@ export default function POSPage() {
                   cart={cart} orderType={orderType} setOrderType={setOrderType}
                   selectedTable={selectedTable} setSelectedTable={setSelectedTable}
                   customerName={customerName} setCustomerName={setCustomerName}
+                  customerPhone={customerPhone} setCustomerPhone={setCustomerPhone}
                   selectedMember={selectedMember} onMemberSelect={onMemberSelect}
                   discount={discount} setDiscount={setDiscount}
                   requireTable={requireTable} tables={tables}
@@ -821,6 +877,7 @@ export default function POSPage() {
                   onTablePicker={() => { setMobileCartOpen(false); setTablePickerOpen(true); }}
                   lastOrder={lastOrder}
                   onClearLastOrder={() => setLastOrder(null)}
+                  onOpenManualLabel={(id) => { setManualLabelOrderId(id); setManualLabelModalOpen(true); }}
                   pointsPreview={pointsPreview}
                   onClaimPoints={handleClaimPoints}
                   claimingPoints={claimingPoints}
@@ -835,6 +892,7 @@ export default function POSPage() {
                   serviceDate={serviceDate} setServiceDate={setServiceDate}
                   serviceTime={serviceTime} setServiceTime={setServiceTime}
                   servicePersonCount={servicePersonCount} setServicePersonCount={setServicePersonCount}
+                  onShareWhatsApp={(ord) => { setWhatsappTargetOrder(ord); setWhatsappModalOpen(true); }}
                 />
               </div>
             </div>
@@ -866,18 +924,64 @@ export default function POSPage() {
         cart={cart} subtotal={subtotal} discountAmt={discountAmt} taxAmt={taxAmt} total={total}
         paymentMethod={paymentMethod} setPaymentMethod={setPaymentMethod}
         payMethods={payMethods} notes={notes} setNotes={setNotes}
-        orderType={orderType} selectedTable={selectedTable} customerName={customerName}
+        orderType={orderType} selectedTable={selectedTable}
+        customerName={customerName} setCustomerName={setCustomerName}
+        customerPhone={customerPhone} setCustomerPhone={setCustomerPhone}
         selectedMember={selectedMember}
         qrisString={settings.qris_string}
         fmt={fmt} onConfirm={placeOrder} placing={placing}
         appliedVoucher={appliedVoucher}
         onApplied={v => setAppliedVoucher(v)}
         onRemove={() => setAppliedVoucher(null)}
+        settings={settings}
       />
+
+      {/* ── WhatsApp Receipt Modal ──── */}
+      {whatsappModalOpen && whatsappTargetOrder && (
+        <WhatsAppReceiptModal
+          open={whatsappModalOpen}
+          onClose={() => { setWhatsappModalOpen(false); setWhatsappTargetOrder(null); }}
+          order={whatsappTargetOrder}
+          items={whatsappTargetOrder.items || []}
+          shopName={settings.cafe_name || settings.site_name || currentBranch?.name || ''}
+          address={settings.cafe_address || settings.contact_address || currentBranch?.address || ''}
+          phone={settings.contact_phone || currentBranch?.phone || ''}
+          currency={currency}
+        />
+      )}
+
+      {/* ── Order Success Modal ──── */}
+      {successModalOpen && completedOrder && (
+        <OrderSuccessModal
+          open={successModalOpen}
+          onClose={() => { setSuccessModalOpen(false); setCompletedOrder(null); }}
+          order={completedOrder}
+          autoPrinted={autoPrintedStatus}
+          onOpenManualLabel={(id) => {
+            setManualLabelOrderId(id);
+            setManualLabelModalOpen(true);
+          }}
+          onOpenWhatsApp={(ord) => {
+            setWhatsappTargetOrder(ord);
+            setWhatsappModalOpen(true);
+          }}
+          fmt={fmt}
+        />
+      )}
+
+      {/* ── Manual Label Print Modal ──── */}
+      {manualLabelModalOpen && manualLabelOrderId && (
+        <ManualLabelPrintModal
+          open={manualLabelModalOpen}
+          onClose={() => { setManualLabelModalOpen(false); setManualLabelOrderId(null); }}
+          orderId={manualLabelOrderId}
+        />
+      )}
 
       {/* ── Shift open modal ──── */}
       {shiftOpen && (
         <ShiftOpenModal
+          branchId={effectiveBranchId}
           onClose={() => setShiftOpen(false)}
           onOpened={() => { setShiftOpen(false); refetchShift(); }}
         />
@@ -899,7 +1003,7 @@ export default function POSPage() {
 // ─── Cart Panel (shared desktop + mobile) ─────────────────────
 function CartPanel({
   cart, orderType, setOrderType, selectedTable, setSelectedTable,
-  customerName, setCustomerName, selectedMember, onMemberSelect,
+  customerName, setCustomerName, customerPhone, setCustomerPhone, selectedMember, onMemberSelect,
   discount, setDiscount,
   serviceDate, setServiceDate, serviceTime, setServiceTime, servicePersonCount, setServicePersonCount,
   requireTable, tables, subtotal, discountAmt, taxAmt, taxRate, total, totalItems,
@@ -909,7 +1013,10 @@ function CartPanel({
   currency, isMobile,
   appliedVoucher, onVoucherApplied, onVoucherRemove,
   itemDiscountMap, calcItemTotal, calcDiscountedPrice,
+  onShareWhatsApp,
+  onOpenManualLabel,
 }) {
+  const toast = useToast();
   // Estimasi poin untuk transaksi berjalan (dari settings global, kasar)
   const estPoints = selectedMember && total > 0 && !lastOrder ? null : null; // handled server-side after order
   return (
@@ -964,6 +1071,8 @@ function CartPanel({
           onSelect={onMemberSelect}
           customerName={customerName}
           setCustomerName={setCustomerName}
+          customerPhone={customerPhone}
+          setCustomerPhone={setCustomerPhone}
           fmt={fmt}
         />
 
@@ -1170,14 +1279,45 @@ function CartPanel({
             </p>
           )}
 
-          <div className="flex gap-1.5">
-            <Button variant="outline" size="sm" className="flex-1 h-8 text-xs gap-1 bg-white"
-              onClick={async () => { try { const r = await api.get(`/printers/receipt/${lastOrder.id}`); await smartPrint(buildReceiptHTML(r.data.receipt, r.data.printer), r.data.printer, 'receipt', r.data.receipt); } catch {} }}>
+          <div className="grid grid-cols-4 gap-1.5">
+            <Button variant="outline" size="sm" className="h-8 text-[11px] px-1 gap-1 bg-white" title="Print Struk"
+              onClick={async () => {
+                try {
+                  const r = await api.get(`/printers/receipt/${lastOrder.id}`);
+                  await smartPrint(buildReceiptHTML(r.data.receipt, r.data.printer), r.data.printer, 'receipt', r.data.receipt);
+                } catch (err) {
+                  toast.error('Cetak struk: ' + (err.response?.data?.error || err.message));
+                }
+              }}>
               <Receipt className="w-3 h-3" /> Struk
             </Button>
-            <Button variant="outline" size="sm" className="flex-1 h-8 text-xs gap-1 bg-white"
-              onClick={async () => { try { const r = await api.get(`/printers/kitchen/${lastOrder.id}`); await smartPrint(buildKitchenHTML(r.data.ticket, r.data.printer), r.data.printer, 'kitchen', r.data.ticket); } catch {} }}>
+            <Button variant="outline" size="sm" className="h-8 text-[11px] px-1 gap-1 bg-white" title="Print Dapur"
+              onClick={async () => {
+                try {
+                  const r = await api.get(`/printers/kitchen/${lastOrder.id}`);
+                  await smartPrint(buildKitchenHTML(r.data.ticket, r.data.printer), r.data.printer, 'kitchen', r.data.ticket);
+                } catch (err) {
+                  toast.error('Cetak dapur: ' + (err.response?.data?.error || err.message));
+                }
+              }}>
               <Utensils className="w-3 h-3" /> Dapur
+            </Button>
+            <Button variant="outline" size="sm" className="h-8 text-[11px] px-1 gap-1 bg-white text-indigo-700 hover:text-indigo-800" title="Cetak Label Cup (Pilih Item / Semua)"
+              onClick={() => {
+                if (onOpenManualLabel && lastOrder?.id) {
+                  onOpenManualLabel(lastOrder.id);
+                } else {
+                  api.get(`/printers/label/${lastOrder.id}`).then(l => {
+                    const lData = l.data.label_data || l.data.labelData;
+                    smartPrint(buildLabelHTML(lData, l.data.printer), l.data.printer, 'label', lData);
+                  }).catch(e => toast.error('Cetak label: ' + (e.response?.data?.error || e.message)));
+                }
+              }}>
+              <Tag className="w-3 h-3" /> Label
+            </Button>
+            <Button variant="outline" size="sm" className="h-8 text-[11px] px-1 gap-1 bg-white text-emerald-700 hover:text-emerald-800" title="Share Nota via WhatsApp"
+              onClick={() => onShareWhatsApp && onShareWhatsApp(lastOrder)}>
+              <MessageCircle className="w-3 h-3" /> WA
             </Button>
           </div>
         </div>
@@ -1187,7 +1327,7 @@ function CartPanel({
 }
 
 // ─── Customer Picker ─────────────────────────────────────────
-function CustomerPicker({ selected, onSelect, customerName, setCustomerName, fmt }) {
+function CustomerPicker({ selected, onSelect, customerName, setCustomerName, customerPhone, setCustomerPhone, fmt }) {
   const toast = useToast();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
@@ -1289,11 +1429,14 @@ function CustomerPicker({ selected, onSelect, customerName, setCustomerName, fmt
                 <input
                   type="text"
                   value={query || customerName}
-                  placeholder="Cari member (kosong = Umum)"
+                  placeholder="Cari member / no HP (kosong = Umum)"
                   onChange={e => {
                     const v = e.target.value;
                     setQuery(v);
                     setCustomerName(v);
+                    if (setCustomerPhone && /^(\+?62|08)[0-9\s-]{6,}$/.test(v.trim())) {
+                      setCustomerPhone(v.trim());
+                    }
                     setShowDropdown(true);
                   }}
                   onFocus={() => { if (query.length >= 2) setShowDropdown(true); }}
@@ -1313,7 +1456,7 @@ function CustomerPicker({ selected, onSelect, customerName, setCustomerName, fmt
               {/* Register button */}
               <button
                 type="button"
-                onClick={() => { setShowRegister(true); setRegForm({ name: customerName, phone: '', email: '' }); }}
+                onClick={() => { setShowRegister(true); setRegForm({ name: customerName, phone: customerPhone || '', email: '' }); }}
                 className="w-9 h-9 rounded-xl border border-dashed border-border flex items-center justify-center text-muted-foreground hover:border-primary hover:text-primary transition-colors shrink-0"
                 title="Daftarkan member baru"
               >
@@ -1596,7 +1739,11 @@ function CartItem({ item, fmt, onQtyChange, onRemove, onNoteChange, voucherDisco
       <div className="flex items-start gap-2">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 flex-wrap">
-            <p className="text-xs font-semibold leading-snug">{item.name}</p>
+            <p className="text-xs font-semibold leading-snug">
+              {(item.variants?.length > 0 || item.addons?.length > 0)
+                ? item.name.replace(/\s*\([^)]*\)$/, '').trim() || item.name
+                : item.name}
+            </p>
             {item.product_type === 'service' && (
               <span className="text-[9px] font-bold px-1.5 py-0.2 bg-violet-100 text-violet-700 rounded border border-violet-200">
                 {item.service_type === 'booking' ? 'Booking' : item.service_type === 'preorder' ? 'Pre-Order' : 'Jasa'}
@@ -1626,9 +1773,14 @@ function CartItem({ item, fmt, onQtyChange, onRemove, onNoteChange, voucherDisco
               <span className="text-[10px] text-orange-500 inline-block mt-0.5">Termasuk addons +{fmt(item.addonsPerUnit)}/item</span>
             )}
           </div>
+          {item.variants?.length > 0 && (
+            <p className="text-[10px] text-violet-600 font-medium mt-0.5 leading-tight">
+              {item.variants.map(v => typeof v === 'object' ? (v.option_name || v.name) : v).filter(Boolean).join(', ')}
+            </p>
+          )}
           {item.addons?.length > 0 && (
             <p className="text-[10px] text-muted-foreground mt-0.5 leading-tight">
-              {item.addons.map(a => `${a.addon_name}${a.qty > 1 ? ` ×${a.qty}` : ''}`).join(', ')}
+              + {item.addons.map(a => `${a.addon_name || a.name || ''}${a.qty > 1 ? ` ×${a.qty}` : ''}`).join(', ')}
             </p>
           )}
         </div>
@@ -1784,8 +1936,9 @@ function TablePickerDialog({ open, onClose, tables, selected, onSelect }) {
 function CheckoutDialog({
   open, onClose, cart, subtotal, discountAmt, taxAmt, total,
   paymentMethod, setPaymentMethod, payMethods, notes, setNotes,
-  orderType, selectedTable, customerName, selectedMember, qrisString, fmt, onConfirm, placing,
-  appliedVoucher, onApplied, onRemove
+  orderType, selectedTable, customerName, setCustomerName,
+  customerPhone, setCustomerPhone, selectedMember, qrisString, fmt, onConfirm, placing,
+  appliedVoucher, onApplied, onRemove, settings = {},
 }) {
   const isServiceOrder = orderType === 'booking' || orderType === 'preorder' || cart.some(i => i.product_type === 'service');
   const [payType, setPayType] = useState('full'); // 'full' | 'dp'
@@ -1793,6 +1946,9 @@ function CheckoutDialog({
   const [step, setStep] = useState('form');
   const [kodeUnik, setKodeUnik] = useState(0);
   const [cashReceived, setCashReceived] = useState('');
+  const [printReceiptOpt, setPrintReceiptOpt] = useState(true);
+  const [printKitchenOpt, setPrintKitchenOpt] = useState(true);
+  const [printLabelOpt, setPrintLabelOpt] = useState(false);
   
   const effectiveDue = payType === 'dp' && parseFloat(dpVal) > 0 ? parseFloat(dpVal) : total;
   const changeAmount = (parseInt(cashReceived.replace(/\D/g, '')) || 0) - effectiveDue;
@@ -1801,6 +1957,10 @@ function CheckoutDialog({
   useEffect(() => {
     if (open) {
       setStep('form');
+      const devAuto = getDeviceAutoPrint();
+      setPrintReceiptOpt(devAuto?.receipt !== undefined ? !!devAuto.receipt : settings.pos_auto_print_receipt !== 'false');
+      setPrintKitchenOpt(devAuto?.kitchen !== undefined ? !!devAuto.kitchen : settings.pos_auto_print_kitchen !== 'false');
+      setPrintLabelOpt(devAuto?.label !== undefined ? !!devAuto.label : settings.pos_auto_print_label === 'true');
       if (isServiceOrder) {
         setPayType('dp');
         setDpVal(String(Math.round(total * 0.3)));
@@ -1814,9 +1974,8 @@ function CheckoutDialog({
           .catch(() => setKodeUnik(Math.floor(Math.random() * 900) + 100)); // Fallback if error
       });
     }
-  }, [open, total, isServiceOrder]);
+  }, [open, total, isServiceOrder, settings]);
 
-  const ICONS = { cash: '💵', digital: '📱', transfer: '🏦', wallet: '👛' };
   const isPendingPay = paymentMethod === 'pending';
   const qrisTotal = effectiveDue + (paymentMethod === 'qris' ? kodeUnik : 0);
   const dynamicQris = paymentMethod === 'qris' && qrisString ? generateDynamicQris(qrisString, qrisTotal) : null;
@@ -1870,7 +2029,7 @@ function CheckoutDialog({
                   <Receipt className="w-4 h-4 mr-2" /> Print QRIS
                 </Button>
               )}
-              <Button className="flex-1" onClick={() => onConfirm(true, true, { dpAmount: payType === 'dp' ? parseFloat(dpVal) : null, isDp: payType === 'dp' && parseFloat(dpVal) > 0 })} disabled={placing}>
+              <Button className="flex-1" onClick={() => onConfirm(printReceiptOpt, printKitchenOpt, printLabelOpt, { dpAmount: payType === 'dp' ? parseFloat(dpVal) : null, isDp: payType === 'dp' && parseFloat(dpVal) > 0 })} disabled={placing}>
                 {placing ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Utensils className="w-4 h-4 mr-2" />}
                 Sudah Dibayar
               </Button>
@@ -2003,8 +2162,16 @@ function CheckoutDialog({
                     >
                       {m.icon?.startsWith('http') || m.icon?.startsWith('/') ? (
                         <img src={m.icon.startsWith('http') ? m.icon : `/uploads/${m.icon.replace(/^\/uploads\//, '')}`} alt={m.name} className="h-6 w-auto object-contain" />
+                      ) : m.code === 'cash' || m.type === 'cash' ? (
+                        <Banknote className="w-5 h-5 text-emerald-600" />
+                      ) : m.code === 'qris' || m.type === 'digital' ? (
+                        <QrCode className="w-5 h-5 text-indigo-600" />
+                      ) : m.code === 'balance' || m.type === 'wallet' ? (
+                        <Wallet className="w-5 h-5 text-amber-600" />
+                      ) : m.code === 'transfer' || m.type === 'transfer' ? (
+                        <Building2 className="w-5 h-5 text-blue-600" />
                       ) : (
-                        <span className="text-xl">{m.icon || ICONS[m.type] || '💳'}</span>
+                        <CreditCard className="w-5 h-5 text-muted-foreground" />
                       )}
                       <span className="text-[10px] text-center leading-tight">{m.name}</span>
                       {isBalance && selectedMember && (
@@ -2066,16 +2233,95 @@ function CheckoutDialog({
               </div>
             )}
 
+            {/* Data Pelanggan / Nota WhatsApp */}
+            <div className="bg-emerald-500/5 rounded-xl p-3 border border-emerald-500/20 space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-emerald-800 dark:text-emerald-400 flex items-center gap-1.5">
+                  <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+                  Kirim Nota via WhatsApp (Opsional):
+                </span>
+                {customerPhone && (
+                  <span className="text-[10px] text-emerald-600 font-medium">Otomatis terisi</span>
+                )}
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] text-muted-foreground block mb-0.5">Nama Pelanggan</label>
+                  <Input
+                    placeholder="Kosong = Umum"
+                    value={customerName}
+                    onChange={e => setCustomerName && setCustomerName(e.target.value)}
+                    className="h-8 text-xs bg-background"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-muted-foreground block mb-0.5">No. WhatsApp Pelanggan</label>
+                  <Input
+                    placeholder="Contoh: 08123456789"
+                    value={customerPhone}
+                    onChange={e => setCustomerPhone && setCustomerPhone(e.target.value)}
+                    className="h-8 text-xs font-mono bg-background"
+                  />
+                </div>
+              </div>
+            </div>
+
             {/* Notes */}
             <div>
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Catatan</p>
               <Input placeholder="Catatan pesanan…" value={notes} onChange={e => setNotes(e.target.value)} className="h-9 text-sm" />
             </div>
 
+            {/* Opsi Cetak Otomatis saat Bayar */}
+            <div className="bg-muted/40 rounded-xl p-3 border space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-muted-foreground flex items-center gap-1.5">
+                  <Printer className="w-3.5 h-3.5 text-primary" />
+                  Cetak Otomatis saat Bayar:
+                </span>
+                <span className="text-[10px] text-muted-foreground">(bisa cetak manual nanti)</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <label className={`flex items-center gap-2 p-2 rounded-lg border text-xs font-medium cursor-pointer transition-all ${
+                  printReceiptOpt ? 'bg-primary/5 border-primary/40 text-primary' : 'bg-background/50 border-muted opacity-70'
+                }`}>
+                  <input
+                    type="checkbox"
+                    checked={printReceiptOpt}
+                    onChange={e => setPrintReceiptOpt(e.target.checked)}
+                    className="rounded text-primary"
+                  />
+                  <span>Struk</span>
+                </label>
+                <label className={`flex items-center gap-2 p-2 rounded-lg border text-xs font-medium cursor-pointer transition-all ${
+                  printKitchenOpt ? 'bg-primary/5 border-primary/40 text-primary' : 'bg-background/50 border-muted opacity-70'
+                }`}>
+                  <input
+                    type="checkbox"
+                    checked={printKitchenOpt}
+                    onChange={e => setPrintKitchenOpt(e.target.checked)}
+                    className="rounded text-primary"
+                  />
+                  <span>Dapur</span>
+                </label>
+                <label className={`flex items-center gap-2 p-2 rounded-lg border text-xs font-medium cursor-pointer transition-all ${
+                  printLabelOpt ? 'bg-emerald-50 border-emerald-500/50 text-emerald-700 font-semibold' : 'bg-background/50 border-muted opacity-70'
+                }`}>
+                  <input
+                    type="checkbox"
+                    checked={printLabelOpt}
+                    onChange={e => setPrintLabelOpt(e.target.checked)}
+                    className="rounded text-primary"
+                  />
+                  <span>Label Cup</span>
+                </label>
+              </div>
+            </div>
+
             {/* Actions */}
             <div className="grid grid-cols-3 gap-2 pt-2 border-t mt-2">
               <Button variant="outline" onClick={onClose} disabled={placing} className="h-11">Batal</Button>
-              <Button variant="outline" onClick={() => onConfirm(false, true, { cashReceived: parseInt(cashReceived.replace(/\D/g, '')) || 0, changeAmount: Math.max(0, changeAmount), dpAmount: payType === 'dp' ? parseFloat(dpVal) : null, isDp: payType === 'dp' && parseFloat(dpVal) > 0 })} disabled={placing} className="h-11 gap-1 text-xs px-1">
+              <Button variant="outline" onClick={() => onConfirm(false, true, printLabelOpt, { cashReceived: parseInt(cashReceived.replace(/\D/g, '')) || 0, changeAmount: Math.max(0, changeAmount), dpAmount: payType === 'dp' ? parseFloat(dpVal) : null, isDp: payType === 'dp' && parseFloat(dpVal) > 0 })} disabled={placing} className="h-11 gap-1 text-xs px-1">
                 {placing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Utensils className="w-3.5 h-3.5" />}
                 Dapur
               </Button>
@@ -2084,7 +2330,7 @@ function CheckoutDialog({
                   if (paymentMethod === 'qris') {
                     setStep('qris');
                   } else {
-                    onConfirm(!isPendingPay, true, { cashReceived: parseInt(cashReceived.replace(/\D/g, '')) || 0, changeAmount: Math.max(0, changeAmount), dpAmount: payType === 'dp' ? parseFloat(dpVal) : null, isDp: payType === 'dp' && parseFloat(dpVal) > 0 });
+                    onConfirm(!isPendingPay && printReceiptOpt, printKitchenOpt, printLabelOpt, { cashReceived: parseInt(cashReceived.replace(/\D/g, '')) || 0, changeAmount: Math.max(0, changeAmount), dpAmount: payType === 'dp' ? parseFloat(dpVal) : null, isDp: payType === 'dp' && parseFloat(dpVal) > 0 });
                   }
                 }}
                 disabled={placing || (paymentMethod === 'cash' && changeAmount < 0)}
@@ -2103,8 +2349,11 @@ function CheckoutDialog({
 }
 
 // ─── Voucher Input ────────────────────────────────────────────
-function VoucherInput({ subtotal, appliedVoucher, onApplied, onRemove }) {
+function VoucherInput({ subtotal, appliedVoucher, onApplied, onRemove, branchId }) {
   const toast = useToast();
+  const { branchId: globalBranchId } = useGlobalBranch();
+  const { user } = useAuth();
+  const effectiveBranch = branchId || (globalBranchId && globalBranchId !== 'all' ? globalBranchId : (user?.branch_id || null));
   const [code, setCode] = useState('');
   const [checking, setChecking] = useState(false);
 
@@ -2112,7 +2361,11 @@ function VoucherInput({ subtotal, appliedVoucher, onApplied, onRemove }) {
     if (!code.trim()) return;
     setChecking(true);
     try {
-      const r = await api.post('/vouchers/validate', { code: code.trim().toUpperCase(), subtotal });
+      const r = await api.post('/vouchers/validate', {
+        code: code.trim().toUpperCase(),
+        subtotal,
+        branch_id: effectiveBranch ? parseInt(effectiveBranch) : undefined
+      });
       onApplied(r.data);
       setCode('');
     } catch (err) {
@@ -2322,16 +2575,24 @@ function VariantPickerDialog({ product, onClose, onConfirm, fmt }) {
 }
 
 // ─── Shift Open Modal (embedded in POS) ──────────────────────
-function ShiftOpenModal({ onClose, onOpened }) {
+function ShiftOpenModal({ branchId, onClose, onOpened }) {
   const toast = useToast();
   const [openingCash, setOpeningCash] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
 
   const handleOpen = async () => {
+    if (!branchId || branchId === 'all') {
+      toast.error('Silakan pilih cabang terlebih dahulu di bagian atas sebelum membuka shift');
+      return;
+    }
     setSaving(true);
     try {
-      await api.post('/shifts/open', { opening_cash: Number(openingCash) || 0, notes: notes || undefined });
+      await api.post('/shifts/open', {
+        opening_cash: Number(openingCash) || 0,
+        notes: notes || undefined,
+        branch_id: Number(branchId),
+      });
       toast.success('Shift berhasil dibuka');
       onOpened();
     } catch (err) {

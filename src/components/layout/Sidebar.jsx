@@ -299,6 +299,8 @@ export default function Sidebar() {
     wifiEnabled: true,
   });
 
+  const [cafeName, setCafeName] = useState(() => sessionStorage.getItem('admin_cafe_name') || '');
+
   // Load feature flags from settings
   useEffect(() => {
     const loadSettings = async () => {
@@ -309,6 +311,12 @@ export default function Sidebar() {
         const gsMap = Array.isArray(generalSettings)
           ? generalSettings.reduce((a, s) => ({ ...a, [s.setting_key]: s.setting_value }), {})
           : generalSettings;
+
+        const dynamicName = gsMap.cafe_name || gsMap.site_name || '';
+        if (dynamicName) {
+          setCafeName(dynamicName);
+          sessionStorage.setItem('admin_cafe_name', dynamicName);
+        }
 
         setSettings({
           hrEnabled: gsMap.hr_enabled === 'true',
@@ -405,7 +413,7 @@ export default function Sidebar() {
                 <Coffee className="w-4 h-4 text-primary-foreground" />
               </div>
               <div className="leading-tight min-w-0">
-                <p className="text-sm font-semibold font-cafe text-foreground truncate">Café Azzura</p>
+                <p className="text-sm font-semibold font-cafe text-foreground truncate">{cafeName || 'Admin Panel'}</p>
                 <p className="text-[10px] text-muted-foreground">Admin Panel</p>
               </div>
             </div>

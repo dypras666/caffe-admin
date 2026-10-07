@@ -37,12 +37,26 @@ export default function LoginPage() {
     }
   }, []);
 
-  // Check if current tenant is demo mode
+  const [cafeName, setCafeName] = useState(() => sessionStorage.getItem('admin_cafe_name') || '');
+
+  // Check cafe name and demo mode
   useEffect(() => {
+    fetch('/api/settings/cafe_name')
+      .then(r => r.json())
+      .then(d => {
+        const val = d?.value || d?.setting?.setting_value;
+        if (val) {
+          setCafeName(val);
+          sessionStorage.setItem('admin_cafe_name', val);
+        }
+      })
+      .catch(() => {});
+
     fetch('/api/settings/is_demo_tenant')
       .then(r => r.json())
       .then(d => {
-        if (d?.setting?.setting_value === 'true') {
+        const val = d?.value || d?.setting?.setting_value;
+        if (val === 'true' || val === true) {
           setIsDemo(true);
         }
       })
@@ -90,7 +104,7 @@ export default function LoginPage() {
           <div className="w-16 h-16 rounded-2xl bg-white/15 backdrop-blur-sm flex items-center justify-center mx-auto mb-4 border border-white/20 shadow-xl">
             <Coffee className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-3xl font-bold text-white font-cafe">Café Azzura</h1>
+          <h1 className="text-3xl font-bold text-white font-cafe">{cafeName || 'Café'}</h1>
           <p className="text-white/60 text-sm mt-1">Admin Panel</p>
         </div>
 
@@ -158,7 +172,7 @@ export default function LoginPage() {
                 <span className="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
                 Mode Demo Aktif &mdash; Klik untuk isi akun:
               </p>
-              <div className="grid grid-cols-3 gap-1.5 text-xs">
+              <div className="grid grid-cols-5 gap-1 text-[11px]">
                 {(() => {
                   const slug = window.location.hostname.replace('office-', '').split('.')[0] || 'demo-cafe-baru';
                   return (
@@ -166,23 +180,42 @@ export default function LoginPage() {
                       <button
                         type="button"
                         onClick={() => setForm({ email: `owner@${slug}.id`, password: 'demo1234' })}
-                        className="px-2 py-1.5 bg-white/15 hover:bg-white/25 text-white font-medium rounded text-center transition-colors border border-white/20 active:scale-95"
+                        className="px-1.5 py-1.5 bg-white/15 hover:bg-white/25 text-white font-medium rounded text-center transition-colors border border-white/20 active:scale-95 truncate"
+                        title="Owner / Admin"
                       >
                         Owner
                       </button>
                       <button
                         type="button"
                         onClick={() => setForm({ email: `kasir@${slug}.id`, password: 'demo1234' })}
-                        className="px-2 py-1.5 bg-white/15 hover:bg-white/25 text-white font-medium rounded text-center transition-colors border border-white/20 active:scale-95"
+                        className="px-1.5 py-1.5 bg-white/15 hover:bg-white/25 text-white font-medium rounded text-center transition-colors border border-white/20 active:scale-95 truncate"
+                        title="Kasir"
                       >
                         Kasir
                       </button>
                       <button
                         type="button"
                         onClick={() => setForm({ email: `waiter@${slug}.id`, password: 'demo1234' })}
-                        className="px-2 py-1.5 bg-white/15 hover:bg-white/25 text-white font-medium rounded text-center transition-colors border border-white/20 active:scale-95"
+                        className="px-1.5 py-1.5 bg-white/15 hover:bg-white/25 text-white font-medium rounded text-center transition-colors border border-white/20 active:scale-95 truncate"
+                        title="Waiter"
                       >
                         Waiter
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setForm({ email: `dapur@${slug}.id`, password: 'demo1234' })}
+                        className="px-1.5 py-1.5 bg-white/15 hover:bg-white/25 text-white font-medium rounded text-center transition-colors border border-white/20 active:scale-95 truncate"
+                        title="Dapur (Kitchen Display)"
+                      >
+                        Dapur
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setForm({ email: `bar@${slug}.id`, password: 'demo1234' })}
+                        className="px-1.5 py-1.5 bg-white/15 hover:bg-white/25 text-white font-medium rounded text-center transition-colors border border-white/20 active:scale-95 truncate"
+                        title="Bar (Bar Display)"
+                      >
+                        Bar
                       </button>
                     </>
                   );
@@ -192,7 +225,7 @@ export default function LoginPage() {
           )}
 
           <p className="text-center text-white/40 text-xs mt-5">
-            Café Azzura &copy; 2026 &mdash; Admin &amp; Kasir Only
+            {cafeName || 'Café'} &copy; {new Date().getFullYear()} &mdash; Admin &amp; Kasir Only
           </p>
         </div>
       </div>

@@ -60,8 +60,8 @@ export function exportPDF(config) {
 
   // Header
   doc.setFontSize(16);
-  doc.setFont('helvetica', 'bold');
-  doc.text(title || 'Laporan Café Azzura', pageW / 2, y, { align: 'center' });
+  const defaultTitle = sessionStorage.getItem('admin_cafe_name') ? `Laporan ${sessionStorage.getItem('admin_cafe_name')}` : 'Laporan Penjualan';
+  doc.text(title || defaultTitle, pageW / 2, y, { align: 'center' });
   y += 8;
 
   if (subtitle) {
@@ -131,7 +131,7 @@ export function formatDateExport(d) {
 export function exportOrdersPDF(orders, period) {
   exportPDF({
     title: 'Laporan Pesanan',
-    subtitle: 'Café Azzura',
+    subtitle: sessionStorage.getItem('admin_cafe_name') || '',
     period,
     filename: 'pesanan',
     tables: [{

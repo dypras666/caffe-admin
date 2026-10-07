@@ -9,7 +9,9 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '.
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../components/ui/select';
 import { ServerSelect } from '../components/ui/server-select';
-import { Plus, Loader2, Pencil, Trash2, ToggleLeft, ToggleRight, Ticket, Search, RefreshCw } from 'lucide-react';
+import { Plus, Loader2, Pencil, Trash2, ToggleLeft, ToggleRight, Ticket, Search, RefreshCw, Building2 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { useGlobalBranch } from '../context/BranchContext';
 
 const TYPE_LABEL = {
   total_discount: 'Diskon Total',
@@ -46,6 +48,8 @@ function formatValue(v) {
 }
 
 export default function VouchersPage() {
+  const { user } = useAuth();
+  const { branchId: selectedBranchId, setBranchId, isAdmin } = useGlobalBranch();
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState(false);
   const [editVoucher, setEditVoucher] = useState(null);
@@ -54,18 +58,33 @@ export default function VouchersPage() {
   const [deletingId, setDeletingId] = useState(null);
   const [freeProduct, setFreeProduct] = useState(null);
 
-  const { data, loading, refetch } = useFetch(`/vouchers${search ? `?search=${encodeURIComponent(search)}` : ''}`);
   const { data: branchData } = useFetch('/branches');
-  const { data: prodData } = useFetch('/products?status=active');
-  const vouchers = data?.vouchers || [];
   const branches = branchData?.branches || [];
+
+  const effectiveBranchId = (selectedBranchId && selectedBranchId !== 'all')
+    ? selectedBranchId
+    : (!isAdmin ? String(user?.branch_id || '') : '');
+  const activeBranchName = branches.find(b => String(b.id) === String(effectiveBranchId))?.name;
+
+  const qsParts = [
+    search ? `search=${encodeURIComponent(search)}` : '',
+    effectiveBranchId ? `branch_id=${effectiveBranchId}` : ''
+  ].filter(Boolean);
+  const qs = qsParts.length ? `?${qsParts.join('&')}` : '';
+
+  const { data, loading, refetch } = useFetch(`/vouchers${qs}`);
+  const { data: prodData } = useFetch(`/products?status=active${effectiveBranchId ? `&branch_id=${effectiveBranchId}` : ''}`);
+  const vouchers = data?.vouchers || [];
   const allProducts = prodData?.products || [];
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   const openCreate = () => {
     setEditVoucher(null);
-    setForm(EMPTY);
+    setForm({
+      ...EMPTY,
+      branch_id: effectiveBranchId || '',
+    });
     setFreeProduct(null);
     setOpen(true);
   };
@@ -141,17 +160,43 @@ export default function VouchersPage() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="flex items-center gap-2">
-          <Ticket className="w-5 h-5 text-muted-foreground" />
-          <h1 className="text-lg font-semibold">Voucher & Promo</h1>
+      {/* Header with Title, Branch Indicator & Branch Select */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <Ticket className="w-5 h-5 text-muted-foreground" />
+            <h1 className="text-lg font-bold">Voucher & Promo</h1>
+            <Badge variant="secondary" className="text-xs">{vouchers.length} voucher</Badge>
+          </div>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {effectiveBranchId
+              ? `Menampilkan promo & voucher untuk: ${activeBranchName || '#' + effectiveBranchId} (dan promo global)`
+              : 'Menampilkan promo & voucher dari semua cabang.'}
+          </p>
         </div>
-        <span className="text-sm text-muted-foreground">{vouchers.length} voucher</span>
-        <div className="flex items-center gap-2 ml-auto">
+
+        <div className="flex items-center gap-2 flex-wrap">
+          {isAdmin && branches.length > 0 && (
+            <div className="flex items-center gap-2">
+              <Building2 className="w-4 h-4 text-muted-foreground shrink-0" />
+              <Select value={selectedBranchId || 'all'} onValueChange={setBranchId}>
+                <SelectTrigger className="w-48 h-8 text-xs">
+                  <SelectValue placeholder="Pilih Cabang" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Cabang</SelectItem>
+                  {branches.map(b => (
+                    <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
             <Input value={search} onChange={e => setSearch(e.target.value)}
-              placeholder="Cari kode / nama..." className="pl-8 h-8 text-sm w-48" />
+              placeholder="Cari kode / nama..." className="pl-8 h-8 text-sm w-44" />
           </div>
           <Button variant="outline" size="sm" onClick={refetch}><RefreshCw className="w-3.5 h-3.5" /></Button>
           <Button onClick={openCreate} className="gap-1.5" size="sm">
@@ -192,7 +237,18 @@ export default function VouchersPage() {
                       </Badge>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">{formatValue(v)}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{v.branch_name || 'Semua'}</TableCell>
+                    <TableCell className="text-sm">
+                      {v.branch_name ? (
+                        <Badge variant="outline" className="text-xs gap-1 font-normal text-muted-foreground">
+                          <Building2 className="w-3 h-3 text-primary/70" />
+                          {v.branch_name}
+                        </Badge>
+                      ) : (
+                        <Badge variant="secondary" className="text-xs font-normal">
+                          Semua Cabang
+                        </Badge>
+                      )}
+                    </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {v.valid_until ? new Date(v.valid_until).toLocaleDateString('id-ID') : '—'}
                     </TableCell>
