@@ -2036,11 +2036,11 @@ function CheckoutDialog({
             </div>
           </div>
         ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           
           {/* Kolom Kiri: Order Summary & Voucher */}
-          <div className="space-y-4">
-            <div className="bg-muted/40 rounded-xl p-4 space-y-1.5 text-sm">
+          <div className="space-y-3">
+            <div className="bg-muted/40 rounded-xl p-3 space-y-1 text-sm">
               <div className="flex justify-between"><span className="text-muted-foreground">Tipe</span><span className="font-medium capitalize">{orderType}</span></div>
               {selectedTable && <div className="flex justify-between"><span className="text-muted-foreground">Meja</span><span className="font-medium">{selectedTable.name || selectedTable.table_number}</span></div>}
               {customerName && <div className="flex justify-between"><span className="text-muted-foreground">Pelanggan</span><span className="font-medium">{customerName}</span></div>}
@@ -2057,7 +2057,7 @@ function CheckoutDialog({
             </div>
 
             {/* Opsi DP / Uang Muka */}
-            <div className="bg-primary/5 rounded-xl p-3 border border-primary/20 space-y-2">
+            <div className="bg-primary/5 rounded-xl p-2.5 border border-primary/20 space-y-1.5">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-foreground">Sistem Pembayaran</span>
                 <div className="flex rounded-lg bg-background p-0.5 border">
@@ -2137,10 +2137,10 @@ function CheckoutDialog({
           </div>
 
           {/* Kolom Kanan: Payment Method, Cash Input, Notes */}
-          <div className="space-y-4">
+          <div className="space-y-3">
             <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Metode Pembayaran</p>
-              <div className="grid grid-cols-3 gap-2">
+              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Metode Pembayaran</p>
+              <div className="grid grid-cols-4 gap-1.5">
                 {payMethods.map(m => {
                   const isBalance = m.code === 'balance';
                   const noMember = isBalance && !selectedMember;
@@ -2152,7 +2152,7 @@ function CheckoutDialog({
                       disabled={noMember}
                       title={noMember ? 'Pilih member terlebih dulu' : undefined}
                       className={cn(
-                        'flex flex-col items-center justify-center gap-1.5 p-3 rounded-xl border-2 text-xs font-semibold transition-all',
+                        'flex flex-col items-center justify-center gap-1 p-2 rounded-xl border-2 text-[10px] font-semibold transition-all',
                         paymentMethod === m.code
                           ? 'border-primary bg-primary/5 text-primary shadow-sm'
                           : noMember
@@ -2187,7 +2187,7 @@ function CheckoutDialog({
                 <button
                   onClick={() => setPaymentMethod('pending')}
                   className={cn(
-                    'flex flex-col items-center justify-center gap-1.5 p-3 rounded-xl border-2 text-xs font-semibold transition-all',
+                    'flex flex-col items-center justify-center gap-1 p-2 rounded-xl border-2 text-[10px] font-semibold transition-all',
                     isPendingPay
                       ? 'border-amber-400 bg-amber-50 text-amber-700 shadow-sm'
                       : 'border-border hover:border-amber-300 text-muted-foreground hover:text-amber-700'
@@ -2208,9 +2208,9 @@ function CheckoutDialog({
 
             {/* Input Tunai (Hanya jika Cash) */}
             {paymentMethod === 'cash' && (
-              <div className="bg-primary/5 rounded-xl p-4 space-y-3 border border-primary/20">
+              <div className="bg-primary/5 rounded-xl p-2.5 space-y-2 border border-primary/20">
                 <div>
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Tunai Diterima</p>
+                  <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">Tunai Diterima</p>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-medium">Rp</span>
                     <Input 
@@ -2234,7 +2234,7 @@ function CheckoutDialog({
             )}
 
             {/* Data Pelanggan / Nota WhatsApp */}
-            <div className="bg-emerald-500/5 rounded-xl p-3 border border-emerald-500/20 space-y-2">
+            <div className="bg-emerald-500/5 rounded-xl p-2.5 border border-emerald-500/20 space-y-1.5">
               <div className="flex items-center justify-between text-xs">
                 <span className="font-semibold text-emerald-800 dark:text-emerald-400 flex items-center gap-1.5">
                   <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
@@ -2268,12 +2268,12 @@ function CheckoutDialog({
 
             {/* Notes */}
             <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Catatan</p>
-              <Input placeholder="Catatan pesanan…" value={notes} onChange={e => setNotes(e.target.value)} className="h-9 text-sm" />
+              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">Catatan</p>
+              <Input placeholder="Catatan pesanan…" value={notes} onChange={e => setNotes(e.target.value)} className="h-8 text-xs" />
             </div>
 
             {/* Opsi Cetak Otomatis saat Bayar */}
-            <div className="bg-muted/40 rounded-xl p-3 border space-y-2">
+            <div className="bg-muted/40 rounded-xl p-2.5 border space-y-1.5">
               <div className="flex items-center justify-between text-xs">
                 <span className="font-semibold text-muted-foreground flex items-center gap-1.5">
                   <Printer className="w-3.5 h-3.5 text-primary" />
