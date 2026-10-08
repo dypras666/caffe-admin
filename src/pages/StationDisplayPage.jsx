@@ -1,3 +1,4 @@
+import { showToast } from '../components/ui/toast';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import api from '../lib/api';
@@ -6,6 +7,7 @@ import {
   ChefHat, GlassWater, Clock, CheckCircle, AlertCircle,
   RefreshCw, Printer, Volume2, VolumeX, PlayCircle, Loader,
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
@@ -64,7 +66,7 @@ function ItemRow({ item, onStatusChange }) {
       await api.patch(`/stations/items/${item.id}/status`, { status: newStatus });
       onStatusChange(item.id, newStatus);
     } catch (err) {
-      alert(err.response?.data?.error || 'Gagal mengubah status');
+      showToast.error(err.response?.data?.error || 'Gagal mengubah status');
     } finally {
       setUpdating(false);
     }
@@ -168,7 +170,7 @@ function OrderCard({ order, onItemStatusChange }) {
         toUpdate.find(u => u.id === it.id) ? { ...it, station_status: targetStatus } : it
       ));
     } catch (err) {
-      alert('Gagal update semua: ' + (err.response?.data?.error || err.message));
+      showToast.error('Gagal update semua: ' + (err.response?.data?.error || err.message));
     } finally {
       setBulkUpdating(false);
     }
@@ -306,6 +308,7 @@ function OrderCard({ order, onItemStatusChange }) {
 
 export default function StationDisplayPage() {
   const { stationCode } = useParams();
+  const { user } = useAuth();
   const [stationData, setStationData] = useState(null);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -321,7 +324,8 @@ export default function StationDisplayPage() {
   const fetchData = useCallback(async (silent = false) => {
     if (!silent) setRefreshing(true);
     try {
-      const res = await api.get(`/stations/display/${stationCode}`);
+      const branchParam = user?.branch_id ? `?branch_id=${user.branch_id}` : '';
+      const res = await api.get(`/stations/display/${stationCode}${branchParam}`);
       const newOrders = res.data.orders || [];
       setStationData(res.data.station);
       setOrders(newOrders);
@@ -340,7 +344,7 @@ export default function StationDisplayPage() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [stationCode]);
+  }, [stationCode, user?.branch_id]);
 
   // Initial load
   useEffect(() => {

@@ -1,7 +1,8 @@
+import { showToast } from '../components/ui/toast';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import api from '../lib/api';
 import { cn } from '../lib/utils';
-import { ChefHat, GlassWater, Clock, CheckCircle, AlertCircle, RefreshCw, Printer, Volume2, VolumeX, PlayCircle, Loader, MessageSquare, Save } from 'lucide-react';
+import { ChefHat, GlassWater, Clock, CheckCircle, AlertCircle, RefreshCw, Printer, Volume2, VolumeX, PlayCircle, Loader, MessageSquare, Save, Building2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 function timeAgo(dateStr) {
@@ -40,7 +41,7 @@ function ItemRow({ item, onStatusChange }) {
       await api.patch(`/stations/items/${item.id}/status`, { status: newStatus });
       onStatusChange(item.id, newStatus);
     } catch (err) {
-      alert(err.response?.data?.error || 'Gagal mengubah status');
+      showToast.error(err.response?.data?.error || 'Gagal mengubah status');
     } finally {
       setUpdating(false);
     }
@@ -51,9 +52,9 @@ function ItemRow({ item, onStatusChange }) {
     try {
       await api.patch(`/stations/items/${item.id}/notes`, { station_notes: comment });
       setShowCommentInput(false);
-      alert('Komentar berhasil dikirim ke kasir!');
+      showToast.success('Komentar berhasil dikirim ke kasir!');
     } catch (err) {
-      alert(err.response?.data?.error || 'Gagal menyimpan komentar');
+      showToast.error(err.response?.data?.error || 'Gagal menyimpan komentar');
     } finally {
       setUpdating(false);
     }
@@ -144,7 +145,7 @@ function OrderCard({ order, onItemStatusChange }) {
       await Promise.all(toUpdate.map(it => api.patch(`/stations/items/${it.id}/status`, { status: targetStatus })));
       setItems(prev => prev.map(it => toUpdate.find(u => u.id === it.id) ? { ...it, station_status: targetStatus } : it));
     } catch (err) {
-      alert('Gagal update semua: ' + (err.response?.data?.error || err.message));
+      showToast.error('Gagal update semua: ' + (err.response?.data?.error || err.message));
     } finally {
       setBulkUpdating(false);
     }
@@ -213,7 +214,8 @@ export default function StationDashboard() {
     if (!silent) setRefreshing(true);
     try {
       if (activeTab === 'queue') {
-        const res = await api.get(`/stations/display/${stationCode}`);
+        const branchParam = user?.branch_id ? `?branch_id=${user.branch_id}` : '';
+        const res = await api.get(`/stations/display/${stationCode}${branchParam}`);
         const newOrders = res.data.orders || [];
         setOrders(newOrders);
         setLastOrderCount(prev => {
@@ -230,7 +232,7 @@ export default function StationDashboard() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [stationCode, activeTab]);
+  }, [stationCode, activeTab, user?.branch_id]);
 
   useEffect(() => {
     setLoading(true);
@@ -248,7 +250,7 @@ export default function StationDashboard() {
       await api.patch(`/stations/products/${productId}/stock`, { stock: newStock });
       setProducts(prev => prev.map(p => p.id === productId ? { ...p, stock: newStock } : p));
     } catch (err) {
-      alert('Gagal update stok: ' + (err.response?.data?.error || err.message));
+      showToast.error('Gagal update stok: ' + (err.response?.data?.error || err.message));
     }
   };
 
@@ -259,7 +261,15 @@ export default function StationDashboard() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Dashboard {user.station.name}</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold">Dashboard {user.station.name}</h1>
+          {(user?.branch_name || user?.station?.branch_name) && (
+            <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-primary/10 text-primary border border-primary/20 flex items-center gap-1.5">
+              <Building2 className="w-3.5 h-3.5" />
+              {user?.branch_name || user?.station?.branch_name}
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setSoundEnabled(!soundEnabled)} className="p-2 rounded-lg bg-white border shadow-sm">
             {soundEnabled ? <Volume2 className="w-4 h-4 text-green-600" /> : <VolumeX className="w-4 h-4 text-gray-400" />}

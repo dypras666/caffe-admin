@@ -1,3 +1,4 @@
+import { showToast } from '../components/ui/toast';
 import { useState, useCallback, useRef, useEffect, createContext, useContext } from 'react';
 import { createPortal } from 'react-dom';
 import { useFetch, useDebounce } from '../hooks/useApi';
@@ -632,8 +633,8 @@ function POItemsDialog({ open, form, onBack, onDone }) {
   const total = items.reduce((s, i) => s + (parseFloat(i.qty_ordered || 0) * parseFloat(i.unit_cost || 0)), 0);
 
   const handleSave = async () => {
-    if (items.some(i => !i.ingredient_id)) { alert('Semua baris harus memiliki bahan baku'); return; }
-    if (items.some(i => !i.qty_ordered || parseFloat(i.qty_ordered) <= 0)) { alert('Qty harus lebih dari 0'); return; }
+    if (items.some(i => !i.ingredient_id)) { showToast.error('Semua baris harus memiliki bahan baku'); return; }
+    if (items.some(i => !i.qty_ordered || parseFloat(i.qty_ordered) <= 0)) { showToast.error('Qty harus lebih dari 0'); return; }
     setSaving(true);
     try {
       await api.post('/stock/po', {
@@ -649,7 +650,7 @@ function POItemsDialog({ open, form, onBack, onDone }) {
       });
       setItems([{ ingredient_id: '', ingredient_name: '', unit: '', qty_ordered: 1, unit_cost: '' }]);
       onDone();
-    } catch (err) { alert(err.response?.data?.error || 'Gagal membuat PO'); }
+    } catch (err) { showToast.error(err.response?.data?.error || 'Gagal membuat PO'); }
     finally { setSaving(false); }
   };
 
@@ -855,7 +856,7 @@ function AddSupplierDialog({ open, onClose, onDone }) {
     try {
       const res = await api.post('/stock/suppliers', form);
       onDone(res.data.supplier);
-    } catch (err) { alert(err.response?.data?.error || 'Gagal'); }
+    } catch (err) { showToast.error(err.response?.data?.error || 'Gagal'); }
     finally { setSaving(false); }
   };
 
@@ -910,7 +911,7 @@ function ReceivePODialog({ open, po, onClose, onDone }) {
         items: items.map(i => ({ po_item_id: i.id, qty_received: parseInt(i.qty_receive || 0) })).filter(i => i.qty_received > 0)
       });
       onDone();
-    } catch (err) { alert(err.response?.data?.error || 'Gagal'); }
+    } catch (err) { showToast.error(err.response?.data?.error || 'Gagal'); }
     finally { setSaving(false); }
   };
 
@@ -987,7 +988,7 @@ function OpnameTab({ active }) {
       const res = await api.post('/stock/opname', payload);
       refetch();
       setDetailId(res.data.opname.id);
-    } catch (err) { alert(err.response?.data?.error || 'Gagal'); }
+    } catch (err) { showToast.error(err.response?.data?.error || 'Gagal'); }
     finally { setSaving(false); }
   };
 
@@ -995,9 +996,9 @@ function OpnameTab({ active }) {
     if (!confirm('Finalisasi opname? Stok akan disesuaikan dengan hasil hitung.')) return;
     try {
       const res = await api.post(`/stock/opname/${id}/approve`);
-      alert(`Opname selesai. ${res.data.adjusted_items} item disesuaikan.`);
+      showToast.success(`Opname selesai. ${res.data.adjusted_items} item disesuaikan.`);
       refetch();
-    } catch (err) { alert(err.response?.data?.error || 'Gagal'); }
+    } catch (err) { showToast.error(err.response?.data?.error || 'Gagal'); }
   };
 
   return (
@@ -1087,7 +1088,7 @@ function OpnameDetailDialog({ id, onClose }) {
       await api.put(`/stock/opname/${id}/items`, { items: changed });
       refetch();
       setEditItems({});
-    } catch (err) { alert(err.response?.data?.error || 'Gagal'); }
+    } catch (err) { showToast.error(err.response?.data?.error || 'Gagal'); }
     finally { setSaving(false); }
   };
 
@@ -1176,7 +1177,7 @@ function SuppliersTab() {
       if (editId) await api.put(`/stock/suppliers/${editId}`, form);
       else await api.post('/stock/suppliers', form);
       setOpen(false); refetch();
-    } catch (err) { alert(err.response?.data?.error || 'Gagal'); }
+    } catch (err) { showToast.error(err.response?.data?.error || 'Gagal'); }
     finally { setSaving(false); }
   };
 
@@ -1297,7 +1298,7 @@ function ProductAdjustForm() {
       });
       setDone(res.data);
       setForm({ product_id: '', product_name: '', product_stock: 0, product_unit: 'pcs', qty_change: '', movement_type: 'adjustment', note: '' });
-    } catch (err) { alert(err.response?.data?.error || 'Gagal'); }
+    } catch (err) { showToast.error(err.response?.data?.error || 'Gagal'); }
     finally { setSaving(false); }
   };
 
@@ -1422,8 +1423,8 @@ function IngredientAdjustForm() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!ingId) return;
-    if (inputMode === 'base' && !qtyChange) return alert('Masukkan jumlah');
-    if (inputMode === 'convert' && (!inputQty || !inputUnitId)) return alert('Pilih satuan dan jumlah');
+    if (inputMode === 'base' && !qtyChange) return showToast.error('Masukkan jumlah');
+    if (inputMode === 'convert' && (!inputQty || !inputUnitId)) return showToast.error('Pilih satuan dan jumlah');
     setSaving(true);
     try {
       const payload = { movement_type: movementType, note };
@@ -1438,7 +1439,7 @@ function IngredientAdjustForm() {
       const res = await api.post(`/ingredients/${ingId}/adjust`, payload);
       setDone(res.data);
       setIngId(''); setIngName(''); setSelectedIng(null); setQtyChange(''); setInputQty(''); setInputUnitId(''); setNote('');
-    } catch (err) { alert(err.response?.data?.error || 'Gagal'); }
+    } catch (err) { showToast.error(err.response?.data?.error || 'Gagal'); }
     finally { setSaving(false); }
   };
 

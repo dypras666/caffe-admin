@@ -1,3 +1,4 @@
+import { showToast } from '../components/ui/toast';
 import { useState } from 'react';
 import { useFetch } from '../hooks/useApi';
 import api from '../lib/api';
@@ -7,7 +8,34 @@ import { Input } from '../components/ui/input';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { Badge } from '../components/ui/badge';
-import { Plus, Pencil, Trash2, Loader2 } from 'lucide-react';
+import { 
+  Plus, Pencil, Trash2, Loader2, ChevronDown, Check,
+  Coffee, Utensils, Beer, IceCream, Pizza, Cake, Sandwich, Carrot, Flame, 
+  Leaf, CupSoda, Croissant, Martini, Wine, Soup, Grape, Citrus, Apple,
+  Fish, Candy, Bean, Donut, GlassWater, Beef
+} from 'lucide-react';
+import { cn } from '../lib/utils';
+
+const COMMON_ICONS = [
+  { name: 'Coffee', icon: Coffee, slug: 'coffee' },
+  { name: 'Utensils', icon: Utensils, slug: 'utensils' },
+  { name: 'Beer', icon: Beer, slug: 'beer' },
+  { name: 'Ice Cream', icon: IceCream, slug: 'ice-cream' },
+  { name: 'Pizza', icon: Pizza, slug: 'pizza' },
+  { name: 'Cake', icon: Cake, slug: 'cake' },
+  { name: 'Sandwich', icon: Sandwich, slug: 'sandwich' },
+  { name: 'Carrot', icon: Carrot, slug: 'carrot' },
+  { name: 'Flame', icon: Flame, slug: 'flame' },
+  { name: 'Leaf', icon: Leaf, slug: 'leaf' },
+  { name: 'Soda', icon: CupSoda, slug: 'cup-soda' },
+  { name: 'Croissant', icon: Croissant, slug: 'croissant' },
+  { name: 'Martini', icon: Martini, slug: 'martini' },
+  { name: 'Wine', icon: Wine, slug: 'wine' },
+  { name: 'Soup', icon: Soup, slug: 'soup' },
+  { name: 'Grape', icon: Grape, slug: 'grape' },
+  { name: 'Citrus', icon: Citrus, slug: 'citrus' },
+  { name: 'Water', icon: GlassWater, slug: 'glass-water' }
+];
 
 const EMPTY_FORM = { name: '', description: '', icon: '', sort_order: 0, is_active: true };
 
@@ -36,7 +64,7 @@ export default function CategoriesPage() {
       setOpen(false);
       refetch();
     } catch (err) {
-      alert(err.response?.data?.error || 'Gagal menyimpan');
+      showToast.error(err.response?.data?.error || 'Gagal menyimpan');
     } finally {
       setSaving(false);
     }
@@ -48,7 +76,7 @@ export default function CategoriesPage() {
       await api.delete(`/categories/${id}`);
       refetch();
     } catch (err) {
-      alert(err.response?.data?.error || 'Gagal menghapus');
+      showToast.error(err.response?.data?.error || 'Gagal menghapus');
     }
   };
 
@@ -85,7 +113,14 @@ export default function CategoriesPage() {
                   <TableRow key={c.id}>
                     <TableCell>
                       <div className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center text-sm font-medium text-muted-foreground">
-                        {c.icon || c.name?.charAt(0)}
+                        {(() => {
+                          const found = COMMON_ICONS.find(i => i.slug === c.icon);
+                          if (found) {
+                            const IconCmp = found.icon;
+                            return <IconCmp className="w-4 h-4" />;
+                          }
+                          return c.icon || c.name?.charAt(0);
+                        })()}
                       </div>
                     </TableCell>
                     <TableCell className="font-medium">{c.name}</TableCell>
@@ -121,8 +156,33 @@ export default function CategoriesPage() {
               <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} required />
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Ikon (teks/slug)</label>
-              <Input placeholder="misal: coffee, food, dessert" value={form.icon} onChange={e => setForm(f => ({ ...f, icon: e.target.value }))} />
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Ikon Kategori</label>
+              <Input 
+                placeholder="misal: coffee, food, dessert atau pilih di bawah" 
+                value={form.icon} 
+                onChange={e => setForm(f => ({ ...f, icon: e.target.value }))} 
+                className="mb-2"
+              />
+              <div className="grid grid-cols-6 gap-1 p-2 bg-secondary/30 border border-border rounded-md h-32 overflow-y-auto">
+                {COMMON_ICONS.map((ico) => {
+                  const IconComponent = ico.icon;
+                  const isSelected = form.icon === ico.slug;
+                  return (
+                    <button
+                      type="button"
+                      key={ico.slug}
+                      onClick={() => setForm(f => ({ ...f, icon: ico.slug }))}
+                      className={cn(
+                        "flex flex-col items-center justify-center gap-1 py-1 px-0.5 rounded-md hover:bg-secondary border border-transparent transition-colors",
+                        isSelected && "bg-secondary border-primary/50 text-primary"
+                      )}
+                      title={ico.name}
+                    >
+                      <IconComponent className="w-5 h-5" />
+                    </button>
+                  );
+                })}
+              </div>
             </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground mb-1 block">Deskripsi</label>

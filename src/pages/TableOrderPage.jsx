@@ -1,3 +1,4 @@
+import { showToast } from '../components/ui/toast';
 import { useState, useEffect } from 'react';
 import { useFetch } from '../hooks/useApi';
 import { useSocket } from '../context/SocketContext';
@@ -321,7 +322,7 @@ function TableDetailPanel({ table, orders, onClose, onRefresh, navigate, onShare
     try {
       await api.put(`/orders/${orderId}/status`, { status });
       onRefresh();
-    } catch (err) { alert(err.response?.data?.error || 'Gagal'); }
+    } catch (err) { showToast.error(err.response?.data?.error || 'Gagal'); }
     finally { setUpdatingId(null); }
   };
 
@@ -329,14 +330,14 @@ function TableDetailPanel({ table, orders, onClose, onRefresh, navigate, onShare
     try {
       const r = await api.get(`/printers/receipt/${orderId}`);
       await smartPrint(buildReceiptHTML(r.data.receipt, r.data.printer), r.data.printer, 'receipt', r.data.receipt);
-    } catch { alert('Gagal print'); }
+    } catch { showToast.error('Gagal print'); }
   };
 
   const printKitchen = async (orderId) => {
     try {
       const r = await api.get(`/printers/kitchen/${orderId}`);
       await smartPrint(buildKitchenHTML(r.data.ticket, r.data.printer), r.data.printer, 'kitchen', r.data.ticket);
-    } catch { alert('Gagal print'); }
+    } catch { showToast.error('Gagal print'); }
   };
 
   const printLabel = async (orderId) => {
@@ -344,7 +345,7 @@ function TableDetailPanel({ table, orders, onClose, onRefresh, navigate, onShare
       const l = await api.get(`/printers/label/${orderId}`);
       const lData = l.data.label_data || l.data.labelData;
       await smartPrint(buildLabelHTML(lData, l.data.printer), l.data.printer, 'label', lData);
-    } catch { alert('Gagal print label'); }
+    } catch { showToast.error('Gagal print label'); }
   };
 
   const style = TABLE_STATUS_STYLE[table.status] || TABLE_STATUS_STYLE.available;

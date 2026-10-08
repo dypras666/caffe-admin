@@ -1,3 +1,4 @@
+import { showToast } from '../components/ui/toast';
 import { useState } from 'react';
 import { useFetch } from '../hooks/useApi';
 import api from '../lib/api';
@@ -137,7 +138,7 @@ export default function VouchersPage() {
       setOpen(false);
       refetch();
     } catch (err) {
-      alert(err.response?.data?.error || 'Gagal menyimpan');
+      showToast.error(err.response?.data?.error || 'Gagal menyimpan');
     } finally { setSaving(false); }
   };
 
@@ -145,7 +146,7 @@ export default function VouchersPage() {
     try {
       await api.put(`/vouchers/${v.id}`, { is_active: v.is_active ? 0 : 1 });
       refetch();
-    } catch (err) { alert(err.response?.data?.error || 'Gagal update'); }
+    } catch (err) { showToast.error(err.response?.data?.error || 'Gagal update'); }
   };
 
   const handleDelete = async (v) => {
@@ -154,7 +155,7 @@ export default function VouchersPage() {
     try {
       await api.delete(`/vouchers/${v.id}`);
       refetch();
-    } catch (err) { alert(err.response?.data?.error || 'Gagal hapus'); }
+    } catch (err) { showToast.error(err.response?.data?.error || 'Gagal hapus'); }
     finally { setDeletingId(null); }
   };
 

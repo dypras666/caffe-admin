@@ -1,6 +1,8 @@
+import { showToast } from '../components/ui/toast';
 import { useState, useEffect } from 'react';
 import { useFetch } from '../hooks/useApi';
 import api from '../lib/api';
+import { useAuth } from '../context/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -50,12 +52,16 @@ function StatCard({ label, value, icon: Icon, color, sub }) {
 }
 
 // ─── SUMMARY TAB ────────────────────────────────────────────────────────────
-function SummaryTab({ categories }) {
+function SummaryTab({ categories, branches, user }) {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
+  const [branchId, setBranchId] = useState('');
 
-  const { data, loading } = useFetch(`/expenses/summary?year=${year}&month=${month}`);
+  const qs = new URLSearchParams({ year, month });
+  if (branchId) qs.set('branch_id', branchId);
+
+  const { data, loading } = useFetch(`/expenses/summary?${qs.toString()}`);
 
   const summary = data || {};
   const byCat = summary.by_category || [];
@@ -91,6 +97,17 @@ function SummaryTab({ categories }) {
             ))}
           </SelectContent>
         </Select>
+        {user?.role === 'admin' && (
+          <Select value={branchId || '_all'} onValueChange={v => setBranchId(v === '_all' ? '' : v)}>
+            <SelectTrigger className="w-40">
+              <SelectValue placeholder="Semua Cabang" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="_all">Semua Cabang</SelectItem>
+              {branches.map(b => <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        )}
       </div>
 
       {loading ? (
@@ -167,11 +184,12 @@ function SummaryTab({ categories }) {
 }
 
 // ─── EXPENSES LIST TAB ──────────────────────────────────────────────────────
-function ExpensesListTab({ categories }) {
+function ExpensesListTab({ categories, branches, user }) {
   const [page, setPage] = useState(1);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [categoryId, setCategoryId] = useState('');
+  const [branchId, setBranchId] = useState('');
   const [search, setSearch] = useState('');
   const [formOpen, setFormOpen] = useState(false);
   const [editItem, setEditItem] = useState(null);
@@ -181,6 +199,7 @@ function ExpensesListTab({ categories }) {
     ...(dateFrom && { date_from: dateFrom }),
     ...(dateTo && { date_to: dateTo }),
     ...(categoryId && { category_id: categoryId }),
+    ...(branchId && { branch_id: branchId }),
     ...(search && { search }),
   }).toString();
 
@@ -195,7 +214,7 @@ function ExpensesListTab({ categories }) {
     try {
       await api.delete(`/expenses/${id}`);
       refetch();
-    } catch (err) { alert(err.response?.data?.error || 'Gagal menghapus'); }
+    } catch (err) { showToast.error(err.response?.data?.error || 'Gagal menghapus'); }
   };
 
   const resetFilters = () => { setDateFrom(''); setDateTo(''); setCategoryId(''); setSearch(''); setPage(1); };
@@ -216,6 +235,17 @@ function ExpensesListTab({ categories }) {
             {categories.map(c => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
           </SelectContent>
         </Select>
+        {user?.role === 'admin' && (
+          <Select value={branchId || '_all'} onValueChange={v => { setBranchId(v === '_all' ? '' : v); setPage(1); }}>
+            <SelectTrigger className="w-40 text-sm">
+              <SelectValue placeholder="Semua Cabang" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="_all">Semua Cabang</SelectItem>
+              {branches.map(b => <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        )}
         <Input
           placeholder="Cari judul..."
           value={search}
@@ -249,6 +279,7 @@ function ExpensesListTab({ categories }) {
                   <TableHead>Tanggal</TableHead>
                   <TableHead>Judul</TableHead>
                   <TableHead>Kategori</TableHead>
+                  <TableHead>Cabang</TableHead>
                   <TableHead className="text-right">Jumlah</TableHead>
                   <TableHead>Pembayaran</TableHead>
                   <TableHead>Referensi</TableHead>
@@ -258,7 +289,7 @@ function ExpensesListTab({ categories }) {
               <TableBody>
                 {expenses.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center text-muted-foreground py-10">Belum ada pengeluaran</TableCell>
+                    <TableCell colSpan={9} className="text-center text-muted-foreground py-10">Belum ada pengeluaran</TableCell>
                   </TableRow>
                 ) : expenses.map(exp => (
                   <TableRow key={exp.id}>
@@ -266,6 +297,7 @@ function ExpensesListTab({ categories }) {
                     <TableCell className="text-sm">{new Date(exp.expense_date).toLocaleDateString('id-ID', { dateStyle: 'medium' })}</TableCell>
                     <TableCell className="font-medium text-sm">{exp.title}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{exp.category_name || '—'}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{branches.find(b => b.id === exp.branch_id)?.name || '—'}</TableCell>
                     <TableCell className="text-right font-semibold">{formatRp(exp.amount)}</TableCell>
                     <TableCell className="text-sm capitalize">{exp.payment_method || '—'}</TableCell>
                     <TableCell className="text-xs font-mono text-muted-foreground">{exp.reference || '—'}</TableCell>
@@ -300,6 +332,8 @@ function ExpensesListTab({ categories }) {
         onDone={() => { setFormOpen(false); refetch(); }}
         editItem={editItem}
         categories={categories}
+        branches={branches}
+        user={user}
       />
     </div>
   );
@@ -335,7 +369,7 @@ function CategoriesTab({ categories, refetchCategories }) {
       }
       setForm(EMPTY_CATEGORY);
       refetchCategories();
-    } catch (err) { alert(err.response?.data?.error || 'Gagal menyimpan kategori'); }
+    } catch (err) { showToast.error(err.response?.data?.error || 'Gagal menyimpan kategori'); }
     finally { setSaving(false); }
   };
 
@@ -344,7 +378,7 @@ function CategoriesTab({ categories, refetchCategories }) {
     try {
       await api.delete(`/expenses/categories/${c.id}`);
       refetchCategories();
-    } catch (err) { alert(err.response?.data?.error || 'Gagal menghapus kategori'); }
+    } catch (err) { showToast.error(err.response?.data?.error || 'Gagal menghapus kategori'); }
   };
 
   return (
@@ -438,7 +472,7 @@ function CategoriesTab({ categories, refetchCategories }) {
 }
 
 // ─── EXPENSE FORM DIALOG ────────────────────────────────────────────────────
-function ExpenseFormDialog({ open, onClose, onDone, editItem, categories }) {
+function ExpenseFormDialog({ open, onClose, onDone, editItem, categories, branches, user }) {
   const isEdit = !!editItem;
   const [form, setForm] = useState(EMPTY_EXPENSE);
   const [saving, setSaving] = useState(false);
@@ -448,6 +482,7 @@ function ExpenseFormDialog({ open, onClose, onDone, editItem, categories }) {
     if (editItem) {
       setForm({
         category_id: editItem.category_id ? String(editItem.category_id) : '',
+        branch_id: editItem.branch_id ? String(editItem.branch_id) : '',
         title: editItem.title || '',
         amount: editItem.amount || '',
         expense_date: editItem.expense_date?.slice(0, 10) || new Date().toISOString().slice(0, 10),
@@ -456,7 +491,7 @@ function ExpenseFormDialog({ open, onClose, onDone, editItem, categories }) {
         description: editItem.description || '',
       });
     } else {
-      setForm(EMPTY_EXPENSE);
+      setForm({ ...EMPTY_EXPENSE, branch_id: user?.branch_id ? String(user.branch_id) : '' });
     }
   }, [syncKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -469,12 +504,13 @@ function ExpenseFormDialog({ open, onClose, onDone, editItem, categories }) {
       const payload = {
         ...form,
         category_id: form.category_id ? parseInt(form.category_id) : null,
+        branch_id: form.branch_id ? parseInt(form.branch_id) : null,
         amount: parseFloat(form.amount),
       };
       if (isEdit) await api.put(`/expenses/${editItem.id}`, payload);
       else await api.post('/expenses', payload);
       onDone();
-    } catch (err) { alert(err.response?.data?.error || 'Gagal menyimpan'); }
+    } catch (err) { showToast.error(err.response?.data?.error || 'Gagal menyimpan'); }
     finally { setSaving(false); }
   };
 
@@ -495,6 +531,18 @@ function ExpenseFormDialog({ open, onClose, onDone, editItem, categories }) {
               </SelectContent>
             </Select>
           </div>
+          {user?.role === 'admin' && (
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Cabang</label>
+              <Select value={form.branch_id || '_none'} onValueChange={v => set('branch_id', v === '_none' ? '' : v)}>
+                <SelectTrigger><SelectValue placeholder="Pilih cabang" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">Semua Cabang / Pusat</SelectItem>
+                  {branches?.map(b => <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div>
             <label className="text-xs font-medium text-muted-foreground mb-1 block">Judul *</label>
             <Input value={form.title} onChange={e => set('title', e.target.value)} placeholder="Beli bahan baku" required />
@@ -543,8 +591,12 @@ function ExpenseFormDialog({ open, onClose, onDone, editItem, categories }) {
 
 // ─── MAIN PAGE ───────────────────────────────────────────────────────────────
 export default function ExpensesPage() {
+  const { user } = useAuth();
   const { data: catData, refetch: refetchCategories } = useFetch('/expenses/categories');
+  const { data: branchData } = useFetch('/branches');
+  
   const categories = catData?.categories || [];
+  const branches = branchData?.branches || [];
 
   return (
     <div className="space-y-5">
@@ -556,10 +608,10 @@ export default function ExpensesPage() {
           <TabsTrigger value="categories">Kategori</TabsTrigger>
         </TabsList>
         <TabsContent value="summary" className="mt-4">
-          <SummaryTab categories={categories} />
+          <SummaryTab categories={categories} branches={branches} user={user} />
         </TabsContent>
         <TabsContent value="list" className="mt-4">
-          <ExpensesListTab categories={categories} />
+          <ExpensesListTab categories={categories} branches={branches} user={user} />
         </TabsContent>
         <TabsContent value="categories" className="mt-4">
           <CategoriesTab categories={categories} refetchCategories={refetchCategories} />

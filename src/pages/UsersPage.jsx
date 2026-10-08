@@ -43,7 +43,7 @@ export default function UsersPage() {
   const { data: branchData } = useFetch('/branches');
   const { data: stationData } = useFetch('/stations');
   const { data: demoSetting } = useFetch('/settings/is_demo_tenant');
-  const isDemo = demoSetting?.setting?.setting_value === 'true';
+  const isDemo = demoSetting?.setting?.setting_value === 'true' || window.location.hostname.includes('demo');
 
   const isMainAdmin = (u) => Boolean(
     u && (u.role === 'admin' || (u.email && (
@@ -57,7 +57,15 @@ export default function UsersPage() {
   const branches   = branchData?.branches || [];
   const stations   = stationData?.stations || [];
 
-  const openCreate = () => { setEditUser(null); setForm(EMPTY_FORM); setOpen(true); };
+  const openCreate = () => {
+    if (isDemo) {
+      toast.warning('Penambahan pengguna baru dinonaktifkan pada website demo demi keamanan data.');
+      return;
+    }
+    setEditUser(null);
+    setForm(EMPTY_FORM);
+    setOpen(true);
+  };
   const openEdit   = (u) => {
     setEditUser(u);
     setForm({ name: u.name, email: u.email, password: '', role: u.role, phone: u.phone || '', branch_id: u.branch_id ? String(u.branch_id) : '', station_id: u.station_id ? String(u.station_id) : '' });
@@ -70,11 +78,15 @@ export default function UsersPage() {
     try {
       if (editUser) {
         const payload = { name: form.name, role: form.role, phone: form.phone || null, branch_id: form.branch_id ? Number(form.branch_id) : null, station_id: form.station_id ? Number(form.station_id) : null };
-        if (form.password && !(isDemo && isMainAdmin(editUser))) {
+        if (form.password && !isDemo) {
           payload.password = form.password;
         }
         await api.put(`/users/${editUser.id}`, payload);
       } else {
+        if (isDemo) {
+          toast.error('Penambahan pengguna baru dinonaktifkan pada website demo demi keamanan.');
+          return;
+        }
         await api.post('/auth/register', { ...form, branch_id: form.branch_id ? Number(form.branch_id) : null, station_id: form.station_id ? Number(form.station_id) : null });
       }
       setOpen(false);
@@ -82,17 +94,14 @@ export default function UsersPage() {
       setEditUser(null);
       refetch();
       toast.success(editUser ? 'Pengguna berhasil diperbarui' : 'Pengguna berhasil ditambahkan');
-      if (!editUser && ['kasir', 'waiter'].includes(form.role)) {
-        // Employee record auto-created by backend if HR module is enabled
-      }
     } catch (err) {
       toast.error(err.response?.data?.message || err.response?.data?.error || 'Gagal menyimpan');
     } finally { setSaving(false); }
   };
 
   const toggleStatus = async (id, currentStatus, targetUser) => {
-    if (isDemo && isMainAdmin(targetUser)) {
-      toast.warning('Akun admin utama dilindungi dan tidak dapat dinonaktifkan pada demo kafe.');
+    if (isDemo) {
+      toast.warning('Pengubahan status pengguna dinonaktifkan pada website demo.');
       return;
     }
     setUpdatingId(id);
@@ -107,6 +116,15 @@ export default function UsersPage() {
 
   return (
     <div className="space-y-4">
+      {isDemo && (
+        <div className="p-3 bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-400 rounded-lg text-sm flex items-center gap-2.5 shadow-sm">
+          <Lock className="w-4 h-4 shrink-0 text-amber-600" />
+          <div className="text-xs sm:text-sm">
+            <span className="font-semibold">Mode Demo Aktif:</span> Penambahan pengguna baru dan penggantian password dinonaktifkan demi keamanan bersama.
+          </div>
+        </div>
+      )}
+
       {/* Header + filter bar */}
       <div className="flex flex-wrap items-center gap-2">
         {/* Search */}
@@ -152,7 +170,12 @@ export default function UsersPage() {
         <span className="text-sm text-muted-foreground ml-auto whitespace-nowrap">
           {pagination.total ?? users.length} pengguna
         </span>
-        <Button onClick={openCreate} className="gap-1.5 h-8 text-sm">
+        <Button
+          onClick={openCreate}
+          disabled={isDemo}
+          className={isDemo ? "gap-1.5 h-8 text-sm opacity-60 cursor-not-allowed" : "gap-1.5 h-8 text-sm"}
+          title={isDemo ? "Penambahan pengguna dinonaktifkan pada mode demo" : undefined}
+        >
           <Plus className="w-4 h-4" />Tambah
         </Button>
       </div>
@@ -249,12 +272,12 @@ export default function UsersPage() {
             <DialogTitle>{editUser ? `Edit — ${editUser.name}` : 'Tambah Pengguna Baru'}</DialogTitle>
           </DialogHeader>
 
-          {editUser && isDemo && isMainAdmin(editUser) && (
+          {isDemo && (
             <div className="p-3 bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-400 rounded-md text-xs flex items-start gap-2">
               <Lock className="w-4 h-4 mt-0.5 shrink-0" />
               <div>
                 <span className="font-semibold block">Mode Demo Aktif</span>
-                Akun admin utama dikunci demi keamanan. Password dan role tidak dapat diubah pada demo kafe.
+                Password pengguna dikunci demi kenyamanan dan tidak dapat diubah pada website demo.
               </div>
             </div>
           )}
@@ -279,14 +302,16 @@ export default function UsersPage() {
               </label>
               <Input type="password" value={form.password}
                 onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
-                required={!editUser} minLength={editUser ? (form.password ? 6 : 0) : 6}
-                disabled={Boolean(editUser && isDemo && isMainAdmin(editUser))}
-                placeholder={editUser && isDemo && isMainAdmin(editUser) ? 'Password dikunci (Mode Demo)' : (editUser ? 'Kosongkan jika tidak diubah' : 'Min. 6 karakter')}
-                className={editUser && isDemo && isMainAdmin(editUser) ? 'bg-muted cursor-not-allowed' : ''}
+                required={!editUser && !isDemo} minLength={editUser ? (form.password ? 6 : 0) : 6}
+                disabled={Boolean(isDemo)}
+                placeholder={isDemo ? 'Password dikunci (Mode Demo)' : (editUser ? 'Kosongkan jika tidak diubah' : 'Min. 6 karakter')}
+                className={isDemo ? 'bg-muted cursor-not-allowed text-muted-foreground' : ''}
               />
-              {editUser && isDemo && isMainAdmin(editUser) && (
-                <p className="text-[10px] text-amber-600 mt-1">Password admin dilindungi dan tidak dapat diubah di mode demo</p>
-              )}
+              {isDemo ? (
+                <p className="text-[10px] text-amber-600 mt-1">🔒 Password pengguna dikunci dan tidak dapat diubah pada website demo</p>
+              ) : editUser ? (
+                <p className="text-[10px] text-muted-foreground mt-0.5">Kosongkan jika tidak ingin mengubah password</p>
+              ) : null}
             </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground mb-1 block">Telepon</label>
@@ -299,9 +324,9 @@ export default function UsersPage() {
                 <Select
                   value={form.role}
                   onValueChange={v => setForm(f => ({ ...f, role: v }))}
-                  disabled={Boolean(editUser && isDemo && isMainAdmin(editUser))}
+                  disabled={Boolean(isDemo)}
                 >
-                  <SelectTrigger className={editUser && isDemo && isMainAdmin(editUser) ? 'bg-muted cursor-not-allowed' : ''}>
+                  <SelectTrigger className={isDemo ? 'bg-muted cursor-not-allowed' : ''}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -337,7 +362,7 @@ export default function UsersPage() {
             </div>
             <div className="flex gap-2 justify-end pt-1">
               <Button type="button" variant="outline" onClick={() => { setOpen(false); setEditUser(null); }}>Batal</Button>
-              <Button type="submit" disabled={saving}>
+              <Button type="submit" disabled={saving || (!editUser && isDemo)}>
                 {saving && <Loader2 className="w-4 h-4 animate-spin mr-1" />}
                 {editUser ? 'Simpan Perubahan' : 'Tambah Pengguna'}
               </Button>

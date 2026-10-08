@@ -1,3 +1,4 @@
+import { showToast } from '../components/ui/toast';
 // v2
 import { useState, useEffect } from 'react';
 import { useFetch } from '../hooks/useApi';
@@ -361,7 +362,7 @@ function IngredientFormDialog({ open, onClose, onDone, editItem, units }) {
       if (isEdit) await api.put(`/ingredients/${editItem.id}`, payload);
       else await api.post('/ingredients', payload);
       onDone();
-    } catch (err) { alert(err.response?.data?.error || 'Gagal menyimpan'); }
+    } catch (err) { showToast.error(err.response?.data?.error || 'Gagal menyimpan'); }
     finally { setSaving(false); }
   };
 
@@ -545,18 +546,18 @@ function CustomUnitsPanel({ ingId, baseUnit }) {
   const handleSave = async (e) => {
     e.preventDefault();
     const qty = parseFloat(form.conversion_qty);
-    if (!form.unit_symbol) return alert('Pilih satuan terlebih dahulu');
-    if (!form.conversion_qty || isNaN(qty) || qty <= 0) return alert('Nilai konversi harus lebih dari 0');
-    if (qty === 1) return alert('Nilai konversi 1 adalah satuan dasar. Gunakan nilai lain (contoh: kg = 1000 jika dasar gram)');
+    if (!form.unit_symbol) return showToast.error('Pilih satuan terlebih dahulu');
+    if (!form.conversion_qty || isNaN(qty) || qty <= 0) return showToast.error('Nilai konversi harus lebih dari 0');
+    if (qty === 1) return showToast.error('Nilai konversi 1 adalah satuan dasar. Gunakan nilai lain (contoh: kg = 1000 jika dasar gram)');
     // Cek duplikat dengan satuan yang sudah ada (kecuali saat edit satuan yang sama)
     const isDup = conversions.some(c => c.unit_symbol === form.unit_symbol && (!editConv || c.id !== editConv.id));
-    if (isDup) return alert(`Satuan "${form.unit_symbol}" sudah ada untuk bahan ini`);
+    if (isDup) return showToast.error(`Satuan "${form.unit_symbol}" sudah ada untuk bahan ini`);
     setSaving(true);
     try {
       if (editConv) await api.put(`/ingredients/units/${editConv.id}`, form);
       else await api.post(`/ingredients/${ingId}/units`, form);
       setAddOpen(false); refetch();
-    } catch (err) { alert(err.response?.data?.error || 'Gagal'); }
+    } catch (err) { showToast.error(err.response?.data?.error || 'Gagal'); }
     finally { setSaving(false); }
   };
 
@@ -728,9 +729,9 @@ function AdjustStockDialog({ item, onClose, onDone }) {
 
   const handleSave = async (e) => {
     if (e?.preventDefault) e.preventDefault();
-    if (inputMode === 'base' && !qtyChange) return alert('Masukkan jumlah');
-    if (inputMode === 'convert' && (!inputQty || !inputUnitId)) return alert('Masukkan jumlah dan pilih satuan');
-    if (inputMode === 'custom' && (!inputQty || !customUnitSymbol)) return alert('Pilih satuan dan masukkan jumlah');
+    if (inputMode === 'base' && !qtyChange) return showToast.error('Masukkan jumlah');
+    if (inputMode === 'convert' && (!inputQty || !inputUnitId)) return showToast.error('Masukkan jumlah dan pilih satuan');
+    if (inputMode === 'custom' && (!inputQty || !customUnitSymbol)) return showToast.error('Pilih satuan dan masukkan jumlah');
     setSaving(true);
     try {
       const payload = { movement_type: movementType, note };
@@ -747,7 +748,7 @@ function AdjustStockDialog({ item, onClose, onDone }) {
       }
       await api.post(`/ingredients/${item.id}/adjust`, payload);
       onDone();
-    } catch (err) { alert(err.response?.data?.error || 'Gagal'); }
+    } catch (err) { showToast.error(err.response?.data?.error || 'Gagal'); }
     finally { setSaving(false); }
   };
 

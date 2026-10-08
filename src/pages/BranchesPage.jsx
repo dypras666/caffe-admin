@@ -1,4 +1,5 @@
-import { useState, useRef } from 'react';
+import { showToast } from '../components/ui/toast';
+import { useState, useRef, useEffect } from 'react';
 import { useFetch } from '../hooks/useApi';
 import api from '../lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -12,13 +13,24 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '.
 import {
   Building2, Plus, Pencil, Trash2, Loader2, Star, QrCode,
   MapPin, Wifi, WifiOff, CheckCircle, Download, RefreshCw,
-  Navigation, Shield, Coins,
+  Navigation, Shield, Coins, Phone, LayoutDashboard, Info, Zap, Lightbulb, LocateFixed
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
+
+// Fix leaflet default icon issue
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+});
 
 function formatDateTime(d) { if (!d) return '—'; return new Date(d).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' }); }
 
-const EMPTY_BRANCH = { name: '', code: '', address: '', phone: '', email: '', city: '', timezone: 'Asia/Jakarta' };
+const EMPTY_BRANCH = { name: '', code: '', address: '', phone: '', email: '', city: '', timezone: 'Asia/Jakarta', lat: -6.200000, lng: 106.816666, wifi_ssid: '', wifi_password: '' };
 const EMPTY_QR = { table_id: '', qr_type: 'static', radius_enabled: false, radius_meters: 50, table_lat: '', table_lng: '', base_url: '' };
 
 export default function BranchesPage() {
@@ -48,9 +60,48 @@ function BranchesTab() {
 
   const openCreate = () => { setForm(EMPTY_BRANCH); setEditId(null); setOpen(true); };
   const openEdit = (b) => {
-    setForm({ name: b.name, code: b.code, address: b.address || '', phone: b.phone || '', email: b.email || '', city: b.city || '', timezone: b.timezone || 'Asia/Jakarta' });
+    setForm({ 
+      name: b.name, code: b.code, address: b.address || '', phone: b.phone || '', 
+      email: b.email || '', city: b.city || '', timezone: b.timezone || 'Asia/Jakarta',
+      lat: b.lat || -6.200000, lng: b.lng || 106.816666,
+      wifi_ssid: b.wifi_ssid || '', wifi_password: b.wifi_password || ''
+    });
     setEditId(b.id);
     setOpen(true);
+  };
+
+  const LocationPicker = () => {
+    const map = useMap();
+    useMapEvents({
+      click(e) {
+        setForm(f => ({ ...f, lat: e.latlng.lat, lng: e.latlng.lng }));
+      },
+    });
+    
+    useEffect(() => {
+      if (form.lat && form.lng) {
+        map.setView([form.lat, form.lng], map.getZoom());
+      }
+    }, [form.lat, form.lng, map]);
+
+    return form.lat && form.lng ? <Marker position={[form.lat, form.lng]} /> : null;
+  };
+
+  const handleGetLocation = () => {
+    if (!navigator.geolocation) {
+      showToast('Browser Anda tidak mendukung fitur lokasi');
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setForm(f => ({ ...f, lat: pos.coords.latitude, lng: pos.coords.longitude }));
+        showToast('Lokasi berhasil didapatkan');
+      },
+      (err) => {
+        showToast('Gagal membaca lokasi perangkat: ' + err.message);
+      },
+      { enableHighAccuracy: true }
+    );
   };
 
   const handleSave = async (e) => {
@@ -59,13 +110,13 @@ function BranchesTab() {
       if (editId) await api.put(`/branches/${editId}`, form);
       else await api.post('/branches', form);
       setOpen(false); refetch();
-    } catch (err) { alert(err.response?.data?.error || 'Gagal'); }
+    } catch (err) { showToast.error(err.response?.data?.error || 'Gagal'); }
     finally { setSaving(false); }
   };
 
   const setMain = async (id) => {
     try { await api.put(`/branches/${id}`, { is_main: true }); refetch(); }
-    catch (err) { alert(err.response?.data?.error || 'Gagal'); }
+    catch (err) { showToast.error(err.response?.data?.error || 'Gagal'); }
   };
 
   if (loading) return <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>;
@@ -99,10 +150,10 @@ function BranchesTab() {
 
               <div className="space-y-1 text-xs text-muted-foreground mb-3">
                 {b.city && <div className="flex items-center gap-1.5"><MapPin className="w-3 h-3" />{b.city}</div>}
-                {b.phone && <div className="flex items-center gap-1.5"><span>📞</span>{b.phone}</div>}
+                {b.phone && <div className="flex items-center gap-1.5"><Phone className="w-3 h-3" />{b.phone}</div>}
                 {b.address && <p className="text-[10px] line-clamp-2 mt-1">{b.address}</p>}
                 <div className="flex items-center gap-1.5 mt-1">
-                  <span className="text-[10px]">🪑 {b.total_tables || 0} meja</span>
+                  <span className="flex items-center gap-1 text-[10px]"><LayoutDashboard className="w-3 h-3" /> {b.total_tables || 0} meja</span>
                 </div>
               </div>
 
@@ -151,6 +202,25 @@ function BranchesTab() {
                     <SelectItem value="Asia/Jayapura">WIT (Jayapura)</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+              <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Wi-Fi SSID</label>
+                <Input value={form.wifi_ssid} onChange={e => setForm(f => ({ ...f, wifi_ssid: e.target.value }))} placeholder="Nama Wi-Fi Cabang" /></div>
+              <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Wi-Fi Password</label>
+                <Input value={form.wifi_password} onChange={e => setForm(f => ({ ...f, wifi_password: e.target.value }))} placeholder="Sandi Wi-Fi" /></div>
+              <div className="col-span-2">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-medium text-muted-foreground block">Pin Lokasi Peta (Klik untuk mengubah pin)</label>
+                  <Button type="button" variant="outline" size="sm" className="h-6 text-[10px] px-2" onClick={handleGetLocation}>
+                    <LocateFixed className="w-3 h-3 mr-1" /> Baca Lokasi Device
+                  </Button>
+                </div>
+                <div className="h-[200px] rounded-md overflow-hidden border border-input">
+                  <MapContainer center={[form.lat, form.lng]} zoom={13} style={{ height: '100%', width: '100%' }}>
+                    <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; OpenStreetMap" />
+                    <LocationPicker />
+                  </MapContainer>
+                </div>
+                <div className="text-[10px] text-muted-foreground mt-1 text-right">Lat: {form.lat.toFixed(6)}, Lng: {form.lng.toFixed(6)}</div>
               </div>
             </div>
             <div className="flex gap-2 justify-end">
@@ -235,7 +305,7 @@ function QRTab() {
       setEditQR(null);
       setForm(EMPTY_QR);
       refetch();
-    } catch (err) { alert(err.response?.data?.error || 'Gagal'); }
+    } catch (err) { showToast.error(err.response?.data?.error || 'Gagal'); }
     finally { setGenerating(false); }
   };
 
@@ -279,7 +349,9 @@ function QRTab() {
                 <p className="text-xs text-muted-foreground mt-1">Meja: <strong>{lastQR.table?.table_number}</strong></p>
                 <p className="text-xs font-mono text-muted-foreground break-all mt-0.5">{lastQR.qr_url}</p>
                 {lastQR.updated && (
-                  <p className="text-[10px] text-blue-600 mt-1">ℹ️ Token tidak berubah — QR lama masih bisa digunakan</p>
+                  <p className="flex items-center gap-1 text-[10px] text-blue-600 mt-1">
+                    <Info className="w-3 h-3" /> Token tidak berubah — QR lama masih bisa digunakan
+                  </p>
                 )}
                 <div className="flex gap-2 mt-2">
                   <Button size="sm" variant="outline" className="text-xs gap-1"
@@ -326,8 +398,9 @@ function QRTab() {
                     </TableCell>
                     <TableCell className="text-sm">{qr.branch_name || '—'}</TableCell>
                     <TableCell>
-                      <Badge variant={qr.qr_type === 'dynamic' ? 'warning' : 'secondary'} className="text-[10px]">
-                        {qr.qr_type === 'dynamic' ? '⚡ Dinamis' : '📌 Statis'}
+                      <Badge variant={qr.qr_type === 'dynamic' ? 'warning' : 'secondary'} className="text-[10px] gap-1 flex items-center w-fit">
+                        {qr.qr_type === 'dynamic' ? <Zap className="w-3 h-3" /> : <MapPin className="w-3 h-3" />}
+                        {qr.qr_type === 'dynamic' ? 'Dinamis' : 'Statis'}
                       </Badge>
                     </TableCell>
                     <TableCell>
@@ -428,8 +501,8 @@ function QRTab() {
                 <Select value={form.qr_type} onValueChange={v => setForm(f => ({ ...f, qr_type: v }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="static">📌 Statis (permanen)</SelectItem>
-                    <SelectItem value="dynamic">⚡ Dinamis (8 jam)</SelectItem>
+                    <SelectItem value="static">Statis (permanen)</SelectItem>
+                    <SelectItem value="dynamic">Dinamis (8 jam)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -476,7 +549,7 @@ function QRTab() {
 
             {form.qr_type === 'dynamic' && (
               <div className="flex items-start gap-2 p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
-                <span>⚡</span>
+                <Zap className="w-4 h-4 shrink-0 mt-0.5" />
                 <span>QR Dinamis akan kadaluarsa dalam 8 jam. Regenerate setiap hari untuk keamanan.</span>
               </div>
             )}
@@ -509,7 +582,7 @@ function RadiusLocationPicker({ radius, lat, lng, onRadiusChange, onLocationChan
   const [gettingGps, setGettingGps] = useState(false);
 
   const getGPS = () => {
-    if (!navigator.geolocation) { alert('Browser tidak mendukung geolokasi'); return; }
+    if (!navigator.geolocation) { showToast.error('Browser tidak mendukung geolokasi'); return; }
     setGettingGps(true);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
@@ -517,7 +590,7 @@ function RadiusLocationPicker({ radius, lat, lng, onRadiusChange, onLocationChan
         setGettingGps(false);
       },
       (err) => {
-        alert('Gagal mendapat GPS: ' + err.message + '\nPastikan izin lokasi diizinkan di browser.');
+        showToast.error('Gagal mendapat GPS: ' + err.message + '\nPastikan izin lokasi diizinkan di browser.');
         setGettingGps(false);
       },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
@@ -608,8 +681,9 @@ function RadiusLocationPicker({ radius, lat, lng, onRadiusChange, onLocationChan
             </Button>
           </div>
           <iframe src={mapUrl} width="100%" height="200" frameBorder="0" loading="lazy" title="Lokasi Meja" style={{ display: 'block' }} />
-          <div className="bg-amber-50 px-3 py-1.5 text-[10px] text-amber-700 border-t border-amber-100 leading-relaxed">
-            💡 Lokasi tidak tepat? Klik <strong>"Buka Full Map"</strong> → klik kanan titik meja → salin koordinat ke input Latitude/Longitude di atas.
+          <div className="flex items-start gap-1.5 bg-amber-50 px-3 py-1.5 text-[10px] text-amber-700 border-t border-amber-100 leading-relaxed">
+            <Lightbulb className="w-3.5 h-3.5 shrink-0 mt-0.5" /> 
+            <span>Lokasi tidak tepat? Klik <strong>"Buka Full Map"</strong> → klik kanan titik meja → salin koordinat ke input Latitude/Longitude di atas.</span>
           </div>
         </div>
       )}
@@ -662,7 +736,7 @@ function PointRulesTab() {
       else await api.post(`/branches/${selectedBranchId}/point-rules`, payload);
       setOpen(false);
       loadRules(selectedBranchId);
-    } catch (err) { alert(err.response?.data?.error || 'Gagal menyimpan'); }
+    } catch (err) { showToast.error(err.response?.data?.error || 'Gagal menyimpan'); }
     finally { setSaving(false); }
   };
 
@@ -672,7 +746,7 @@ function PointRulesTab() {
     try {
       await api.delete(`/branches/${selectedBranchId}/point-rules/${rule.id}`);
       loadRules(selectedBranchId);
-    } catch (err) { alert(err.response?.data?.error || 'Gagal hapus'); }
+    } catch (err) { showToast.error(err.response?.data?.error || 'Gagal hapus'); }
     finally { setDeletingId(null); }
   };
 

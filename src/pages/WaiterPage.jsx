@@ -13,6 +13,7 @@ import {
   Loader2, ChevronDown, X, Check, Coffee,
   Utensils, Layers, User, UserPlus, Phone, Star, Wallet,
   CheckCircle2, Building2, CalendarDays, Clock, ShoppingBag,
+  Lock,
 } from 'lucide-react';
 
 const ORDER_TYPES = [
@@ -61,12 +62,18 @@ export default function WaiterPage() {
     ? (branchesData?.branches || []).find(b => b.id === currentUser.branch_id)
     : null;
 
+  const { data: currentShiftData } = useFetch(currentUser?.branch_id ? `/shifts/current` : null);
+  const currentShift = currentShiftData?.shift || null;
+
   const products   = (productsData?.products || []).filter(p => p.is_available && p.status === 'active');
   const categories = catData?.categories || [];
   const tables     = tablesData?.tables || [];
   const settings   = (settingsData?.settings || []).reduce((a, s) => ({ ...a, [s.setting_key]: s.setting_value }), {});
   const currency   = settings.currency_symbol || 'Rp';
   const taxRate    = parseFloat(settings.tax_rate || 0);
+
+  const shiftEnabled = settings.shift_enabled === 'true';
+  const shiftRequired = shiftEnabled && !currentShift;
 
   const subtotal   = cart.reduce((s, i) => s + (i.unitPrice + (i.addonsPerUnit || 0)) * i.qty, 0);
   const taxAmt     = Math.round(subtotal * taxRate / 100 * 100) / 100;
@@ -128,6 +135,10 @@ export default function WaiterPage() {
   const onMemberSelect = (member) => { setSelectedMember(member); setCustomerName(member ? member.name : ''); };
 
   const placeOrder = async () => {
+    if (shiftRequired) {
+      toast.error('Gagal memproses pesanan: Shift kasir belum dibuka untuk cabang ini.');
+      return;
+    }
     if (!cart.length) {
       toast.warning('Keranjang masih kosong');
       return;
@@ -212,6 +223,24 @@ export default function WaiterPage() {
             <p className="text-2xl font-bold text-green-600">Pesanan Masuk!</p>
             <p className="text-5xl font-black tracking-wider text-foreground">{successOrder.order_number}</p>
             <p className="text-sm text-muted-foreground">Menutup otomatis…</p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Shift Lock Overlay ─────────────────────────────── */}
+      {shiftRequired && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
+          <div className="text-center bg-card p-6 rounded-3xl border shadow-xl max-w-sm w-full animate-in zoom-in-95">
+            <div className="w-16 h-16 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Lock className="w-8 h-8" />
+            </div>
+            <p className="font-bold text-lg text-foreground">Shift Belum Dibuka</p>
+            <p className="text-sm text-muted-foreground mt-2 mb-6">
+              Menu tidak dapat diakses dan pesanan tidak dapat diproses sampai Kasir membuka Shift di cabang ini. Hubungi kasir Anda.
+            </p>
+            <Button className="w-full" variant="outline" onClick={() => window.location.reload()}>
+              Cek Ulang Status Shift
+            </Button>
           </div>
         </div>
       )}
@@ -536,16 +565,16 @@ function WaiterCart({
         )}
       </div>
 
-      {/* Cart items */}
-      <div className="flex-1 overflow-y-auto">
+      {/* Cart items and Options (Scrollable) */}
+      <div className="flex-1 overflow-y-auto flex flex-col">
         {cart.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-2">
+          <div className="flex-1 flex flex-col items-center justify-center py-16 text-muted-foreground gap-2">
             <ShoppingCart className="w-10 h-10 opacity-10" />
             <p className="text-sm font-medium">Keranjang kosong</p>
             <p className="text-xs opacity-60">Pilih produk di sebelah kiri</p>
           </div>
         ) : (
-          <div className="px-3 py-2 space-y-2">
+          <div className="px-3 py-2 space-y-2 flex-1">
             {cart.map(item => (
               <CartItem key={item.cartKey} item={item} fmt={fmt}
                 onQtyChange={(d) => updateQty(item.cartKey, d)}
@@ -554,11 +583,10 @@ function WaiterCart({
             ))}
           </div>
         )}
-      </div>
 
-      {/* Summary + Payment options + actions */}
-      {cart.length > 0 && (
-        <div className="border-t px-4 py-3 space-y-3 shrink-0">
+        {/* Summary + Payment options */}
+        {cart.length > 0 && (
+          <div className="border-t px-4 py-3 space-y-3 shrink-0 bg-muted/10">
           <Input placeholder="Catatan pesanan…" value={notes} onChange={e => setNotes(e.target.value)} className="h-8 text-sm" />
 
           {/* Payment & DP Selector */}
@@ -676,21 +704,25 @@ function WaiterCart({
               </div>
             )}
           </div>
+        </div>
+      )}
+    </div>
 
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={onClear} className="h-10 px-3" title="Kosongkan keranjang">
-              <Trash2 className="w-4 h-4 text-destructive" />
-            </Button>
-            <Button
-              size="sm"
-              onClick={onPlaceOrder}
-              disabled={placing || (orderType === 'dine-in' && !selectedTable)}
-              className="flex-1 h-10 gap-2 text-sm font-semibold"
-            >
-              {placing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-              {placing ? 'Memproses…' : 'Kirim Pesanan'}
-            </Button>
-          </div>
+      {/* Sticky Action Buttons */}
+      {cart.length > 0 && (
+        <div className="p-3 border-t bg-card shrink-0 flex gap-2">
+          <Button variant="outline" size="sm" onClick={onClear} className="h-10 px-3" title="Kosongkan keranjang">
+            <Trash2 className="w-4 h-4 text-destructive" />
+          </Button>
+          <Button
+            size="sm"
+            onClick={onPlaceOrder}
+            disabled={placing || (orderType === 'dine-in' && !selectedTable)}
+            className="flex-1 h-10 gap-2 text-sm font-semibold shadow-md"
+          >
+            {placing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+            {placing ? 'Memproses…' : 'Kirim Pesanan'}
+          </Button>
         </div>
       )}
     </>

@@ -11,6 +11,8 @@ import {
 } from 'lucide-react';
 import { useSidebar } from '../../context/SidebarContext';
 import { useAuth } from '../../context/AuthContext';
+import { useGlobalBranch } from '../../context/BranchContext';
+import { useFetch } from '../../hooks/useApi';
 import { cn } from '../../lib/utils';
 import api from '../../lib/api';
 
@@ -291,6 +293,24 @@ function NavGroup({ group, collapsed, open, onToggle, userRole }) {
 export default function Sidebar() {
   const { collapsed, toggle, mobileOpen, setMobileOpen } = useSidebar();
   const { user } = useAuth();
+  const branchContext = useGlobalBranch();
+  const selectedBranchId = branchContext?.branchId;
+  const { data: branchData } = useFetch('/branches');
+  const branches = branchData?.branches || [];
+
+  // Resolve active branch name
+  let activeBranchName = '';
+  if (user?.role === 'admin') {
+    if (selectedBranchId && selectedBranchId !== 'all') {
+      const found = branches.find(b => String(b.id) === String(selectedBranchId));
+      activeBranchName = found ? found.name : (user?.branch_name || '');
+    } else {
+      activeBranchName = 'Semua Cabang';
+    }
+  } else {
+    activeBranchName = user?.branch_name || branches.find(b => String(b.id) === String(user?.branch_id))?.name || '';
+  }
+
   const location = useLocation();
   const [settings, setSettings] = useState({
     hrEnabled: true,
@@ -402,24 +422,34 @@ export default function Sidebar() {
           mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         )}
       >
-        {/* Logo */}
+        {/* Logo & Cafe / Branch info */}
         <div className={cn(
           'flex items-center border-b px-4 h-14 shrink-0',
           collapsed ? 'justify-center' : 'justify-between'
         )}>
           {!collapsed && (
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shrink-0">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shrink-0 shadow-sm">
                 <Coffee className="w-4 h-4 text-primary-foreground" />
               </div>
               <div className="leading-tight min-w-0">
                 <p className="text-sm font-semibold font-cafe text-foreground truncate">{cafeName || 'Admin Panel'}</p>
-                <p className="text-[10px] text-muted-foreground">Admin Panel</p>
+                {activeBranchName ? (
+                  <p className="text-[11px] text-muted-foreground truncate font-medium flex items-center gap-1 mt-0.5">
+                    <Building2 className="w-3 h-3 text-primary shrink-0" />
+                    <span className="truncate">{activeBranchName}</span>
+                  </p>
+                ) : (
+                  <p className="text-[10px] text-muted-foreground">Admin Panel</p>
+                )}
               </div>
             </div>
           )}
           {collapsed && (
-            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+            <div
+              className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center cursor-pointer shadow-sm"
+              title={`${cafeName || 'Admin Panel'}${activeBranchName ? ` • ${activeBranchName}` : ''}`}
+            >
               <Coffee className="w-4 h-4 text-primary-foreground" />
             </div>
           )}
@@ -433,10 +463,27 @@ export default function Sidebar() {
           )}
         </div>
 
+        {/* Dedicated Branch Pill / Info Banner */}
+        {!collapsed && activeBranchName && (
+          <div className="px-3 pt-2.5 pb-0.5 shrink-0">
+            <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-xs">
+              <Building2 className="w-3.5 h-3.5 text-primary shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground leading-none">Cabang</p>
+                <p className="text-xs font-semibold text-foreground truncate mt-0.5">{activeBranchName}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Dashboard — always standalone */}
-        <div className={cn('px-3 pt-3 pb-1 shrink-0', collapsed && 'px-2')}>
+        <div className={cn('px-3 pt-2 pb-1 shrink-0', collapsed && 'px-2')}>
           <NavItem
-            item={{ to: '/', icon: LayoutDashboard, label: 'Dashboard' }}
+            item={{
+              to: '/',
+              icon: user?.role === 'station' || user?.role === 'kitchen' ? ChefHat : LayoutDashboard,
+              label: user?.role === 'station' || user?.role === 'kitchen' ? `Stasiun ${user?.station?.name || 'Dapur'}` : 'Dashboard'
+            }}
             collapsed={collapsed}
           />
         </div>

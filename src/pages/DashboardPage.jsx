@@ -25,6 +25,7 @@ import { useAuth } from '../context/AuthContext';
 import StationDashboard from './StationDashboard';
 import { useState, useEffect } from 'react';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../components/ui/select';
+import { Navigate } from 'react-router-dom';
 
 const STATUS_LABEL = {
   pending: { label: 'Pending', cls: 'badge-status-pending' },
@@ -47,6 +48,10 @@ export default function DashboardPage() {
 
   if (user?.role === 'station' || user?.role === 'kitchen') {
     return <StationDashboard />;
+  }
+  
+  if (user?.role === 'waiter') {
+    return <Navigate to="/waiter" replace />;
   }
 
   const stats = data || {};

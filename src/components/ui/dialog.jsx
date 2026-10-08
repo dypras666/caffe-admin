@@ -47,7 +47,7 @@ export function DialogHeader({ className, ...props }) {
 export function DialogBody({ className, ...props }) {
   return (
     <div
-      className={cn('flex-1 overflow-y-auto overscroll-contain pr-1', className)}
+      className={cn('flex-1 overflow-y-auto overscroll-contain min-h-0 pr-1', className)}
       style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-y', ...(props.style || {}) }}
       {...props}
     />

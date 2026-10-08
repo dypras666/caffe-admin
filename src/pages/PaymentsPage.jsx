@@ -10,8 +10,11 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '.
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../components/ui/select';
-import { CreditCard, Wallet, Plus, Loader2, Star, StarOff, Pencil, Trash2, Upload, Image } from 'lucide-react';
+import { ServerSelect } from '../components/ui/server-select';
+import { CreditCard, Wallet, Plus, Loader2, Star, StarOff, Pencil, Trash2, Upload, Image, Building2 } from 'lucide-react';
 import { useToast } from '../components/ui/toast';
+import { useAuth } from '../context/AuthContext';
+import { useGlobalBranch } from '../context/BranchContext';
 
 function formatRp(v) { return `Rp ${Number(v || 0).toLocaleString('id')}`; }
 function formatDate(d) { return new Date(d).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' }); }
@@ -31,7 +34,7 @@ const parseQris = (str) => {
   }
   return tags;
 };
-const EMPTY_METHOD = { name: '', code: '', type: 'digital', description: '', icon: '', sort_order: 99 };
+const EMPTY_METHOD = { name: '', code: '', type: 'digital', description: '', icon: '', sort_order: 99, branch_id: '' };
 
 export default function PaymentsPage() {
   return (
@@ -52,7 +55,19 @@ export default function PaymentsPage() {
 
 function PaymentMethodsTab() {
   const toast = useToast();
-  const { data, loading, refetch } = useFetch('/payments/methods');
+  const { user } = useAuth();
+  const { branchId: selectedBranchId, isAdmin } = useGlobalBranch();
+  
+  const effectiveBranchId = (selectedBranchId && selectedBranchId !== 'all')
+    ? selectedBranchId
+    : (!isAdmin ? String(user?.branch_id || '') : '');
+    
+  const qs = effectiveBranchId ? `?branch_id=${effectiveBranchId}` : '';
+
+  const { data, loading, refetch } = useFetch(`/payments/methods${qs}`);
+  const { data: branchData } = useFetch('/branches');
+  const branches = branchData?.branches || [];
+
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_METHOD);
   const [editId, setEditId] = useState(null);
@@ -65,9 +80,22 @@ function PaymentMethodsTab() {
 
   const methods = data?.methods || [];
 
-  const openCreate = () => { setForm(EMPTY_METHOD); setEditId(null); setIconPreview(null); setIconFile(null); setExtractedQris(null); setExtractedMerchant(null); setOpen(true); };
+  const openCreate = () => { 
+    setForm({ ...EMPTY_METHOD, branch_id: effectiveBranchId || '' }); 
+    setEditId(null); 
+    setIconPreview(null); 
+    setIconFile(null); 
+    setExtractedQris(null); 
+    setExtractedMerchant(null); 
+    setOpen(true); 
+  };
   const openEdit = (m) => {
-    setForm({ name: m.name, code: m.code, type: m.type, description: m.description || '', icon: m.icon || '', sort_order: m.sort_order });
+    setForm({ 
+      name: m.name, code: m.code, type: m.type, 
+      description: m.description || '', icon: m.icon || '', 
+      sort_order: m.sort_order,
+      branch_id: m.branch_id || ''
+    });
     setEditId(m.id);
     setIconPreview(m.icon && m.icon.startsWith('http') ? m.icon : null);
     setExtractedQris(null); setExtractedMerchant(null);
@@ -279,6 +307,24 @@ function PaymentMethodsTab() {
             )}
 
             <div className="grid grid-cols-2 gap-3">
+              {isAdmin && (
+                <div className="col-span-2 space-y-1.5">
+                  <label className="text-xs font-semibold text-stone-700">Cabang</label>
+                  <Select value={String(form.branch_id || 'all')} onValueChange={v => setForm({ ...form, branch_id: v === 'all' ? '' : v })}>
+                    <SelectTrigger className="w-full h-9">
+                      <SelectValue placeholder="Pilih Cabang (Opsional)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Semua Cabang (Global)</SelectItem>
+                      {branches.map(b => (
+                        <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[10px] text-stone-500 mt-1">Kosongkan/pilih 'Semua Cabang' jika metode ini berlaku untuk seluruh cabang.</p>
+                </div>
+              )}
+
               <div className="col-span-2">
                 <label className="text-xs font-medium text-muted-foreground mb-1 block">Nama Metode *</label>
                 <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} required placeholder="misal: GoPay, OVO" />

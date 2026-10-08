@@ -1,3 +1,4 @@
+import { showToast } from '../components/ui/toast';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import api from '../lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -839,7 +840,7 @@ function ActiveTab() {
   const handleKill = async (id) => {
     if (!confirm('Kill this active session?')) return;
     try { await api.post(`/integrations/mikrotik/hotspot/active/${id}/kill`); poll(); }
-    catch (err) { alert(err.response?.data?.error || 'Failed'); }
+    catch (err) { showToast.error(err.response?.data?.error || 'Failed'); }
   };
 
   if (loading) return <LoadingSpinner />;
@@ -1034,13 +1035,13 @@ function UsersTab() {
     try {
       await api.patch(`/integrations/mikrotik/hotspot/user/${id}`, { disabled: currentDisabled === 'true' ? 'false' : 'true' });
       load();
-    } catch (err) { alert(err.response?.data?.error || 'Failed'); }
+    } catch (err) { showToast.error(err.response?.data?.error || 'Failed'); }
   };
 
   const handleDelete = async (id, name) => {
     if (!confirm(`Delete hotspot user "${name}"?`)) return;
     try { await api.delete(`/integrations/mikrotik/hotspot/user/${id}`); load(); }
-    catch (err) { alert(err.response?.data?.error || 'Failed'); }
+    catch (err) { showToast.error(err.response?.data?.error || 'Failed'); }
   };
 
   if (state.loading) return <LoadingSpinner />;

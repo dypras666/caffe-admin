@@ -1,3 +1,4 @@
+import { showToast } from '../components/ui/toast';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useFetch } from '../hooks/useApi';
 import api from '../lib/api';
@@ -98,13 +99,13 @@ function CategoryManager({ onClose }) {
       setColor('#6F4E37');
       setEditId(null);
       refetch();
-    } catch { alert('Gagal simpan'); }
+    } catch { showToast.error('Gagal simpan'); }
     finally { setSaving(false); }
   };
 
   const handleDelete = async (id) => {
     if (!confirm('Hapus kategori ini?')) return;
-    try { await api.delete(`/posts/categories/${id}`); refetch(); } catch { alert('Gagal hapus'); }
+    try { await api.delete(`/posts/categories/${id}`); refetch(); } catch { showToast.error('Gagal hapus'); }
   };
 
   const cats = data?.categories || [];
@@ -154,12 +155,12 @@ function TagManager({ onClose }) {
 
   const handleAdd = async () => {
     if (!name.trim()) return;
-    try { await api.post('/posts/tags', { name }); setName(''); refetch(); } catch { alert('Gagal'); }
+    try { await api.post('/posts/tags', { name }); setName(''); refetch(); } catch { showToast.error('Gagal'); }
   };
 
   const handleDelete = async (id) => {
     if (!confirm('Hapus tag ini?')) return;
-    try { await api.delete(`/posts/tags/${id}`); refetch(); } catch { alert('Gagal'); }
+    try { await api.delete(`/posts/tags/${id}`); refetch(); } catch { showToast.error('Gagal'); }
   };
 
   const tags = data?.tags || [];
@@ -255,19 +256,19 @@ export default function PostsPage() {
       setOpen(false);
       refetch();
     } catch (err) {
-      alert(err.response?.data?.error || 'Gagal menyimpan');
+      showToast.error(err.response?.data?.error || 'Gagal menyimpan');
     } finally { setSaving(false); }
   };
 
   const handleDelete = async (id) => {
     if (!confirm('Hapus post ini?')) return;
-    try { await api.delete(`/posts/${id}`); refetch(); } catch { alert('Gagal hapus'); }
+    try { await api.delete(`/posts/${id}`); refetch(); } catch { showToast.error('Gagal hapus'); }
   };
 
   const handleStatusToggle = async (id, currentStatus) => {
     const newStatus = currentStatus === 'published' ? 'draft' : 'published';
     try { await api.put(`/posts/${id}`, { ...form, status: newStatus }); refetch(); }
-    catch { alert('Gagal update status'); }
+    catch { showToast.error('Gagal update status'); }
   };
 
   const uploadImage = async (file) => {
@@ -283,7 +284,7 @@ export default function PostsPage() {
     try {
       const url = await uploadImage(file);
       setForm(prev => ({ ...prev, cover_image: url }));
-    } catch { alert('Gagal upload cover'); }
+    } catch { showToast.error('Gagal upload cover'); }
     e.target.value = '';
   };
 
@@ -293,7 +294,7 @@ export default function PostsPage() {
     try {
       const urls = await Promise.all(files.map(f => uploadImage(f)));
       setForm(prev => ({ ...prev, gallery: [...prev.gallery, ...urls] }));
-    } catch { alert('Gagal upload gallery'); }
+    } catch { showToast.error('Gagal upload gallery'); }
     e.target.value = '';
   };
 

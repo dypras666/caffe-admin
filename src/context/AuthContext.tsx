@@ -23,10 +23,24 @@ export function AuthProvider({ children }) {
       localStorage.removeItem('cafe_admin_token');
       localStorage.removeItem('cafe_admin_user');
       setUser(null);
+      setLoading(false);
     } else {
+      // Optimistically set user from localStorage, then verify with backend
       try { setUser(JSON.parse(localStorage.getItem('cafe_admin_user') || 'null')); } catch { setUser(null); }
+      
+      api.get('/auth/me').then(({ data }) => {
+        if (data && data.user) {
+          localStorage.setItem('cafe_admin_user', JSON.stringify(data.user));
+          setUser(data.user);
+        }
+      }).catch(() => {
+        localStorage.removeItem('cafe_admin_token');
+        localStorage.removeItem('cafe_admin_user');
+        setUser(null);
+      }).finally(() => {
+        setLoading(false);
+      });
     }
-    setLoading(false);
   }, []);
 
   const login = async (email, password) => {

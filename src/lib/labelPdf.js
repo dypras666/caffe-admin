@@ -1,3 +1,4 @@
+import { showToast } from "../components/ui/toast";
 import jsPDF from 'jspdf';
 import { getCleanProductName } from './printer';
 
@@ -287,7 +288,7 @@ export function previewLabelPDF(payload, sizeId = '50x30') {
   const url = URL.createObjectURL(blob);
   const win = window.open(url, '_blank');
   if (!win) {
-    alert('Popup diblokir oleh browser. Izinkan popup untuk melihat preview PDF.');
+    showToast.error('Popup diblokir oleh browser. Izinkan popup untuk melihat preview PDF.');
   }
   return url;
 }

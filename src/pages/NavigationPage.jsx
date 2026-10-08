@@ -1,3 +1,4 @@
+import { showToast } from '../components/ui/toast';
 import { useState, useEffect, useCallback } from 'react';
 import {
   Plus, Pencil, Trash2, GripVertical, ExternalLink, Eye, EyeOff,
@@ -49,7 +50,7 @@ export default function NavigationPage() {
       setForm({ ...emptyForm });
       fetchMenus();
     } catch (e) {
-      alert(e?.response?.data?.error || 'Gagal menyimpan');
+      showToast.error(e?.response?.data?.error || 'Gagal menyimpan');
     } finally { setSaving(false); }
   };
 
@@ -71,7 +72,7 @@ export default function NavigationPage() {
       await api.delete(`/navigation/${id}`);
       fetchMenus();
     } catch (e) {
-      alert('Gagal menghapus');
+      showToast.error('Gagal menghapus');
     }
   };
 
@@ -83,7 +84,7 @@ export default function NavigationPage() {
       });
       fetchMenus();
     } catch (e) {
-      alert('Gagal mengubah status');
+      showToast.error('Gagal mengubah status');
     }
   };
 

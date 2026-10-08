@@ -1,3 +1,4 @@
+import { showToast } from '../components/ui/toast';
 import { useState, useEffect } from 'react';
 import { useFetch } from '../hooks/useApi';
 import api from '../lib/api';
@@ -72,7 +73,7 @@ function SettingsTab() {
     if (topupOn) {
       const activeMethods = (paymentData?.methods || []).filter(m => m.is_active);
       if (activeMethods.length === 0) {
-        alert('Fitur Top Up Saldo tidak bisa diaktifkan.\n\nWajib mengaktifkan minimal 1 metode pembayaran terlebih dahulu di halaman Pembayaran (/payments).');
+        showToast.error('Fitur Top Up Saldo tidak bisa diaktifkan.\n\nWajib mengaktifkan minimal 1 metode pembayaran terlebih dahulu di halaman Pembayaran (/payments).');
         return;
       }
     }
@@ -84,7 +85,7 @@ function SettingsTab() {
       refetch();
       window.dispatchEvent(new CustomEvent('settings-updated'));
     } catch (err) {
-      alert(err.response?.data?.error || 'Gagal menyimpan');
+      showToast.error(err.response?.data?.error || 'Gagal menyimpan');
     } finally { setSaving(false); }
   };
 
@@ -97,7 +98,7 @@ function SettingsTab() {
       setNewSetting(EMPTY_NEW);
       refetch();
     } catch (err) {
-      alert(err.response?.data?.error || 'Gagal menambah setting');
+      showToast.error(err.response?.data?.error || 'Gagal menambah setting');
     } finally { setCreating(false); }
   };
 
@@ -196,9 +197,9 @@ function SettingsTab() {
                           const code = jsQR(imageData.data, imageData.width, imageData.height);
                           if (code && code.data) {
                             handleChange('qris_string', code.data);
-                            alert('QRIS berhasil di-decode dan disave ke qris_string!');
+                            showToast.success('QRIS berhasil di-decode dan disave ke qris_string!');
                           } else {
-                            alert('Gagal membaca QR Code dari gambar yang diupload. Pastikan gambar jelas.');
+                            showToast.error('Gagal membaca QR Code dari gambar yang diupload. Pastikan gambar jelas.');
                           }
                         };
                         img.src = event.target.result;
@@ -206,7 +207,7 @@ function SettingsTab() {
                       reader.readAsDataURL(file);
                     }
                   } catch (err) {
-                    alert('Gagal upload gambar');
+                    showToast.error('Gagal upload gambar');
                   }
                   e.target.value = '';
                 }}

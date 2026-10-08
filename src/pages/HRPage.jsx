@@ -421,6 +421,7 @@ function SearchableEmployeeSelect({ value, onChange, onSelectEmployee, disabled,
 // ─── Employees Tab ────────────────────────────────────────────
 function EmployeesTab() {
   const toast = useToast();
+  const isDemo = window.location.hostname.includes('demo');
   const [branchFilter, setBranchFilter] = useState('all');
   const { data, loading, refetch } = useFetch(`/hr/employees${branchFilter && branchFilter !== 'all' ? `?branch_id=${branchFilter}` : ''}`);
   const { data: stationsData } = useFetch('/stations');
@@ -670,8 +671,8 @@ function EmployeesTab() {
                 </div>
               )}
 
-              {/* Create user account — only when adding new employee */}
-              {!editId && (
+              {/* Create user account — only when adding new employee (disabled on demo) */}
+              {!editId && !isDemo && (
                 <div className="col-span-2 border-t pt-3">
                   <label className="flex items-center gap-2 cursor-pointer select-none">
                     <input

@@ -1,3 +1,4 @@
+import { showToast } from '../components/ui/toast';
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useFetch } from '../hooks/useApi';
@@ -109,7 +110,7 @@ export default function TablesPage() {
       setOpen(false);
       refetch();
     } catch (err) {
-      alert(err.response?.data?.error || 'Gagal menyimpan');
+      showToast.error(err.response?.data?.error || 'Gagal menyimpan');
     } finally {
       setSaving(false);
     }
@@ -121,7 +122,7 @@ export default function TablesPage() {
       await api.delete(`/tables/${id}`);
       refetch();
     } catch (err) {
-      alert(err.response?.data?.error || 'Gagal menghapus');
+      showToast.error(err.response?.data?.error || 'Gagal menghapus');
     }
   };
 
@@ -145,7 +146,7 @@ export default function TablesPage() {
       await api.patch(`/tables/${id}/status`, { status, ...extra });
       refetch();
     } catch (err) {
-      alert(err.response?.data?.error || 'Gagal update');
+      showToast.error(err.response?.data?.error || 'Gagal update');
     } finally {
       setUpdatingId(null);
     }

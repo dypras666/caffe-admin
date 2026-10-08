@@ -1,3 +1,4 @@
+import { showToast } from '../components/ui/toast';
 import { useState, useEffect } from 'react';
 import { useFetch, useDebounce } from '../hooks/useApi';
 import api from '../lib/api';
@@ -53,7 +54,7 @@ function AdjustBalanceDialog({ member, open, onClose, onDone }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.amount || Number(form.amount) <= 0) {
-      alert('Masukkan jumlah yang valid');
+      showToast.error('Masukkan jumlah yang valid');
       return;
     }
     setSaving(true);
@@ -66,7 +67,7 @@ function AdjustBalanceDialog({ member, open, onClose, onDone }) {
       onDone();
       onClose();
     } catch (err) {
-      alert(err.response?.data?.error || 'Gagal mengubah saldo');
+      showToast.error(err.response?.data?.error || 'Gagal mengubah saldo');
     } finally {
       setSaving(false);
     }
@@ -186,7 +187,7 @@ function MemberListTab() {
       await api.put(`/members/${member.id}/priority`, { is_priority: !member.is_priority });
       refetch();
     } catch (err) {
-      alert(err.response?.data?.error || 'Gagal mengubah status priority');
+      showToast.error(err.response?.data?.error || 'Gagal mengubah status priority');
     } finally {
       setActionId(null);
     }
@@ -198,7 +199,7 @@ function MemberListTab() {
       await api.post('/members/check-priority', { user_id: member.id });
       refetch();
     } catch (err) {
-      alert(err.response?.data?.error || 'Gagal cek priority');
+      showToast.error(err.response?.data?.error || 'Gagal cek priority');
     } finally {
       setActionId(null);
     }
@@ -470,7 +471,7 @@ function TopupRequestsTab({ onPendingCount }) {
       setConfirm(null);
       refetch();
     } catch (err) {
-      alert(err.response?.data?.error || 'Gagal memproses request');
+      showToast.error(err.response?.data?.error || 'Gagal memproses request');
     } finally {
       setProcessing(false);
     }
@@ -652,7 +653,7 @@ function MemberSettingsTab() {
       setEdited({});
       refetch();
     } catch (err) {
-      alert(err.response?.data?.error || 'Gagal menyimpan pengaturan');
+      showToast.error(err.response?.data?.error || 'Gagal menyimpan pengaturan');
     } finally {
       setSaving(false);
     }

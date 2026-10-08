@@ -1,3 +1,4 @@
+import { showToast } from '../components/ui/toast';
 import { useState, useCallback } from 'react';
 import { useFetch } from '../hooks/useApi';
 import api from '../lib/api';
@@ -34,7 +35,7 @@ export default function RecipesPage() {
     try {
       await api.post('/recipes/recalculate-all');
       refetch();
-    } catch (err) { alert(err.response?.data?.error || 'Gagal recalculate'); }
+    } catch (err) { showToast.error(err.response?.data?.error || 'Gagal recalculate'); }
     finally { setRecalculating(false); }
   };
 
@@ -187,7 +188,7 @@ function RecipeEditorDialog({ productId, onClose, onDone }) {
 
   const handleSave = async (e) => {
     e.preventDefault();
-    if (items.some(i => !i.ingredient_id || !i.qty)) return alert('Lengkapi semua bahan');
+    if (items.some(i => !i.ingredient_id || !i.qty)) return showToast.error('Lengkapi semua bahan');
     setSaving(true);
     try {
       await api.post(`/recipes/${productId}`, {
@@ -203,7 +204,7 @@ function RecipeEditorDialog({ productId, onClose, onDone }) {
         })),
       });
       onDone();
-    } catch (err) { alert(err.response?.data?.error || 'Gagal menyimpan resep'); }
+    } catch (err) { showToast.error(err.response?.data?.error || 'Gagal menyimpan resep'); }
     finally { setSaving(false); }
   };
 
@@ -213,7 +214,7 @@ function RecipeEditorDialog({ productId, onClose, onDone }) {
     try {
       await api.delete(`/recipes/${productId}`);
       onDone();
-    } catch (err) { alert(err.response?.data?.error || 'Gagal menghapus'); }
+    } catch (err) { showToast.error(err.response?.data?.error || 'Gagal menghapus'); }
     finally { setDeleting(false); }
   };
 

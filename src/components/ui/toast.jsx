@@ -17,6 +17,15 @@ const STYLES = {
   info: 'border-blue-200 bg-blue-50',
 };
 
+let globalToast = null;
+
+export const showToast = {
+  success: (msg, dur) => globalToast?.success(msg, dur),
+  error: (msg, dur) => globalToast?.error(msg, dur),
+  warning: (msg, dur) => globalToast?.warning(msg, dur),
+  info: (msg, dur) => globalToast?.info(msg, dur),
+};
+
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
   const counterRef = useRef(0);
@@ -35,6 +44,8 @@ export function ToastProvider({ children }) {
     warning: (msg, dur) => add(msg, 'warning', dur),
     info: (msg, dur) => add(msg, 'info', dur),
   };
+
+  globalToast = toast;
 
   return (
     <ToastContext.Provider value={toast}>
