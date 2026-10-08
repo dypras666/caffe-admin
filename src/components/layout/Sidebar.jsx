@@ -17,7 +17,7 @@ import { cn } from '../../lib/utils';
 import api from '../../lib/api';
 
 // ─── Nav structure builder ────────────────────────────────────
-function buildNavGroups(settings = {}) {
+export function buildNavGroups(settings = {}) {
   const {
     hrEnabled = true,
     bookingEnabled = true,
@@ -112,6 +112,17 @@ function buildNavGroups(settings = {}) {
       { to: '/reports', icon: BarChart3, label: 'Laporan', adminOnly: true },
     ],
   },
+  {
+    key: 'marketing',
+    label: 'Pelanggan & Promo',
+    icon: Ticket,
+    color: 'text-pink-600',
+    adminOnly: true,
+    items: [
+      { to: '/members',       icon: Users2,      label: 'Manajemen Member', adminOnly: true },
+      { to: '/vouchers',      icon: Ticket,      label: 'Voucher & Promo',  adminOnly: true },
+    ],
+  },
   ...(hrEnabled ? [{
     key: 'sdm',
     label: 'SDM & KPI',
@@ -160,8 +171,6 @@ function buildNavGroups(settings = {}) {
     color: 'text-red-500',
     adminOnly: true,
     items: [
-      { to: '/members',       icon: Users2,      label: 'Manajemen Member', adminOnly: true },
-      { to: '/vouchers',      icon: Ticket,      label: 'Voucher & Promo',  adminOnly: true },
       { to: '/users',         icon: Users,       label: 'Pengguna' },
       { to: '/roles',         icon: ShieldCheck,    label: 'Roles',       adminOnly: true },
       { to: '/audit',         icon: ShieldCheck,    label: 'Audit Trail' },

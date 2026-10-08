@@ -3,7 +3,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useFetch, useDebounce } from '../hooks/useApi';
 import api from '../lib/api';
 import { cn } from '../lib/utils';
-import { buildReceiptHTML, buildKitchenHTML, buildLabelHTML, smartPrint, getDeviceAutoPrint } from '../lib/printer';
+import { buildReceiptHTML, buildKitchenHTML, buildLabelHTML, smartPrint, getDeviceAutoPrint, setDeviceAutoPrint } from '../lib/printer';
 import WhatsAppReceiptModal from '../components/WhatsAppReceiptModal';
 import OrderSuccessModal from '../components/OrderSuccessModal';
 import ManualLabelPrintModal from '../components/ManualLabelPrintModal';
@@ -658,36 +658,39 @@ export default function POSPage() {
           )}
 
           {/* Branch + Shift indicator row */}
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center justify-between gap-1.5">
             {currentBranch && (
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Building2 className="w-3.5 h-3.5" />
-                <span className="font-medium text-foreground">{currentBranch.name}</span>
+              <div className="flex items-center gap-1.5 text-[10px] sm:text-xs text-muted-foreground truncate">
+                <Building2 className="w-3.5 h-3.5 shrink-0" />
+                <span className="font-medium text-foreground truncate">{currentBranch.name}</span>
               </div>
             )}
-            <div className="flex items-center gap-2 ml-auto">
+            <div className="flex items-center gap-1 sm:gap-2 shrink-0">
               {currentShift ? (
                 <>
-                  <div className="flex items-center gap-1.5 text-xs bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1">
-                    <Clock className="w-3 h-3 text-amber-600" />
-                    <span className="font-medium text-amber-700 font-mono">{currentShift.shift_number}</span>
-                    <span className="text-amber-600">·</span>
-                    <span className="text-amber-700 font-medium">{fmt(currentShift.live_total_revenue)}</span>
-                    <span className="text-amber-500 hidden sm:inline">({currentShift.live_total_orders} order)</span>
+                  <div className="flex items-center gap-1 sm:gap-1.5 text-[10px] sm:text-xs bg-amber-50 border border-amber-200 rounded-md sm:rounded-lg px-1.5 sm:px-2.5 py-1">
+                    <Clock className="w-3 h-3 text-amber-600 shrink-0" />
+                    <span className="font-medium text-amber-700 font-mono hidden md:inline">{currentShift.shift_number}</span>
+                    <span className="text-amber-600 hidden md:inline">·</span>
+                    <span className="text-amber-700 font-medium whitespace-nowrap">{fmt(currentShift.live_total_revenue)}</span>
+                    <span className="text-amber-500 hidden sm:inline whitespace-nowrap">({currentShift.live_total_orders} order)</span>
                   </div>
-                  <Button size="sm" variant="outline" className="h-7 text-xs px-2 gap-1 text-destructive border-red-200 hover:bg-red-50"
+                  <Button size="sm" variant="outline" className="h-6 sm:h-7 text-[10px] sm:text-xs px-2 gap-1 text-destructive border-red-200 hover:bg-red-50"
                     onClick={() => setShiftClose(true)}>
-                    Tutup Shift
+                    <span className="hidden sm:inline">Tutup Shift</span>
+                    <span className="sm:hidden">Tutup</span>
                   </Button>
                 </>
               ) : (
-                <Button size="sm" variant="outline" className="h-7 text-xs px-2 gap-1 text-emerald-700 border-emerald-300 hover:bg-emerald-50"
+                <Button size="sm" variant="outline" className="h-6 sm:h-7 text-[10px] sm:text-xs px-2 gap-1 text-emerald-700 border-emerald-300 hover:bg-emerald-50"
                   onClick={() => setShiftOpen(true)}>
-                  <Clock className="w-3.5 h-3.5" />Buka Shift
+                  <Clock className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0" />
+                  <span className="hidden sm:inline">Buka Shift</span>
+                  <span className="sm:hidden">Buka</span>
                 </Button>
               )}
-              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 ml-1 text-muted-foreground hover:bg-muted" onClick={toggleFullscreen} title="Toggle Fullscreen">
-                {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
+              <Button size="sm" variant="ghost" className="h-6 w-6 sm:h-7 sm:w-7 p-0 shrink-0 text-muted-foreground hover:bg-muted" onClick={toggleFullscreen} title="Toggle Fullscreen">
+                {isFullscreen ? <Minimize className="w-3 h-3 sm:w-4 sm:h-4" /> : <Maximize className="w-3 h-3 sm:w-4 sm:h-4" />}
               </Button>
             </div>
           </div>
@@ -781,7 +784,7 @@ export default function POSPage() {
                 {popularProducts.length > 0 && activeCategory === 'all' && !debouncedSearch && (
                   <h3 className="font-semibold text-sm mb-3 flex items-center gap-1.5"><Store className="w-4 h-4 text-primary" /> Semua Produk</h3>
                 )}
-                <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-3">
+                <div className="grid grid-cols-2 min-[400px]:grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-3">
                   {(activeCategory === 'promo' || (promoCategoryId && activeCategory === String(promoCategoryId)) ? promoProducts : products).map(product => 
                     renderProductCard(product, product.promoLabel, product.promoValidTo)
                   )}
@@ -859,7 +862,7 @@ export default function POSPage() {
                   <ChevronDown className="w-4 h-4" />
                 </button>
               </div>
-              <div className="flex-1 overflow-y-auto">
+              <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
                 <CartPanel
                   cart={cart} orderType={orderType} setOrderType={setOrderType}
                   selectedTable={selectedTable} setSelectedTable={setSelectedTable}
@@ -874,7 +877,7 @@ export default function POSPage() {
                   onNoteChange={(key, note) => setCart(c => c.map(i => i.cartKey === key ? { ...i, notes: note } : i))}
                   onClear={clearCart}
                   onCheckout={() => shiftRequired ? setShiftOpen(true) : setCheckoutOpen(true)}
-                  onTablePicker={() => { setMobileCartOpen(false); setTablePickerOpen(true); }}
+                  onTablePicker={() => { setTablePickerOpen(true); }}
                   lastOrder={lastOrder}
                   onClearLastOrder={() => setLastOrder(null)}
                   onOpenManualLabel={(id) => { setManualLabelOrderId(id); setManualLabelModalOpen(true); }}
@@ -1982,8 +1985,8 @@ function CheckoutDialog({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl">
-        <DialogHeader><DialogTitle>{step === 'qris' ? 'Pembayaran QRIS' : 'Konfirmasi Pembayaran'}</DialogTitle></DialogHeader>
+      <DialogContent className="max-w-4xl p-3 md:p-6 max-h-[100dvh] md:max-h-[90vh] flex flex-col">
+        <DialogHeader className="shrink-0"><DialogTitle>{step === 'qris' ? 'Pembayaran QRIS' : 'Konfirmasi Pembayaran'}</DialogTitle></DialogHeader>
         
         {step === 'qris' ? (
           <div className="space-y-4 py-4 flex flex-col items-center">
@@ -2036,28 +2039,30 @@ function CheckoutDialog({
             </div>
           </div>
         ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <>
+        <div className="flex-1 overflow-y-auto pr-1 pb-1">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-4">
           
           {/* Kolom Kiri: Order Summary & Voucher */}
-          <div className="space-y-3">
-            <div className="bg-muted/40 rounded-xl p-3 space-y-1 text-sm">
+          <div className="space-y-2">
+            <div className="bg-muted/40 rounded-xl p-2 space-y-1 text-[10px] sm:text-xs">
               <div className="flex justify-between"><span className="text-muted-foreground">Tipe</span><span className="font-medium capitalize">{orderType}</span></div>
               {selectedTable && <div className="flex justify-between"><span className="text-muted-foreground">Meja</span><span className="font-medium">{selectedTable.name || selectedTable.table_number}</span></div>}
               {customerName && <div className="flex justify-between"><span className="text-muted-foreground">Pelanggan</span><span className="font-medium">{customerName}</span></div>}
-              <div className="flex justify-between text-muted-foreground text-xs pt-2 border-t">
+              <div className="flex justify-between text-muted-foreground text-[10px] pt-1.5 border-t mt-1.5">
                 <span>{cart.reduce((s, i) => s + i.qty, 0)} item · Subtotal</span>
                 <span>{fmt(subtotal)}</span>
               </div>
-              {discountAmt > 0 && <div className="flex justify-between text-green-600 text-xs"><span>Diskon</span><span>− {fmt(discountAmt)}</span></div>}
-              {taxAmt > 0 && <div className="flex justify-between text-muted-foreground text-xs"><span>Pajak</span><span>{fmt(taxAmt)}</span></div>}
-              <div className="flex justify-between font-bold text-lg border-t pt-2 mt-2">
+              {discountAmt > 0 && <div className="flex justify-between text-green-600 text-[10px]"><span>Diskon</span><span>− {fmt(discountAmt)}</span></div>}
+              {taxAmt > 0 && <div className="flex justify-between text-muted-foreground text-[10px]"><span>Pajak</span><span>{fmt(taxAmt)}</span></div>}
+              <div className="flex justify-between font-bold text-sm sm:text-lg border-t pt-1.5 mt-1.5">
                 <span>Total</span>
                 <span className="text-primary">{fmt(total)}</span>
               </div>
             </div>
 
             {/* Opsi DP / Uang Muka */}
-            <div className="bg-primary/5 rounded-xl p-2.5 border border-primary/20 space-y-1.5">
+            <div className="bg-primary/5 rounded-xl p-1.5 border border-primary/20 space-y-1">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-foreground">Sistem Pembayaran</span>
                 <div className="flex rounded-lg bg-background p-0.5 border">
@@ -2107,14 +2112,15 @@ function CheckoutDialog({
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-muted-foreground">Rp</span>
                     <Input
-                      type="number"
-                      value={dpVal}
-                      onChange={e => setDpVal(e.target.value)}
-                      placeholder="Contoh: 50000"
-                      className="pl-9 h-8 text-xs font-bold"
+                      type="text"
+                      inputMode="numeric"
+                      value={dpVal ? Number(dpVal).toLocaleString('id') : ''}
+                      onChange={e => setDpVal(e.target.value.replace(/\D/g, ''))}
+                      placeholder="Contoh: 50.000"
+                      className="pl-9 h-7 text-xs font-bold"
                     />
                   </div>
-                  <div className="flex justify-between text-[11px] text-muted-foreground pt-0.5">
+                  <div className="flex justify-between text-[10px] text-muted-foreground pt-0.5">
                     <span>Sisa Pelunasan Nanti:</span>
                     <span className="font-bold text-amber-700">
                       {fmt(Math.max(0, total - (parseFloat(dpVal) || 0)))}
@@ -2124,9 +2130,9 @@ function CheckoutDialog({
               )}
             </div>
             
-            {/* Voucher Input dipindahkan ke dalam modal (kiri bawah) */}
+            {/* Voucher Input */}
             <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Voucher Promo</p>
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">Voucher Promo</p>
               <VoucherInput 
                 subtotal={subtotal} 
                 appliedVoucher={appliedVoucher} 
@@ -2134,13 +2140,90 @@ function CheckoutDialog({
                 onRemove={onRemove} 
               />
             </div>
+
+            {/* Data Pelanggan & Catatan */}
+            <div className="grid grid-cols-2 gap-1.5 mt-1">
+              <div>
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-0.5">Nama Pelanggan</p>
+                <Input
+                  placeholder="Kosong = Umum"
+                  value={customerName}
+                  onChange={e => setCustomerName && setCustomerName(e.target.value)}
+                  className="h-7 text-[10px] px-2 bg-background"
+                />
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-0.5">Catatan</p>
+                <Input 
+                  placeholder="Catatan pesanan…" 
+                  value={notes} 
+                  onChange={e => setNotes(e.target.value)} 
+                  className="h-7 text-[10px] px-2 bg-background" 
+                />
+              </div>
+            </div>
+
+            {/* Opsi Cetak Otomatis saat Bayar */}
+            <div className="bg-muted/40 rounded-xl p-1.5 border space-y-1">
+              <div className="flex items-center justify-between text-[10px]">
+                <span className="font-semibold text-muted-foreground flex items-center gap-1.5">
+                  <Printer className="w-3 h-3 text-primary" />
+                  Cetak:
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-1.5">
+                <label className={`flex items-center justify-center gap-1 p-1 rounded-lg border text-[10px] font-medium cursor-pointer transition-all ${
+                  printReceiptOpt ? 'bg-primary/5 border-primary/40 text-primary' : 'bg-background/50 border-muted opacity-70'
+                }`}>
+                  <input
+                    type="checkbox"
+                    checked={printReceiptOpt}
+                    onChange={e => {
+                      setPrintReceiptOpt(e.target.checked);
+                      setDeviceAutoPrint({ receipt: e.target.checked });
+                    }}
+                    className="rounded text-primary h-3 w-3"
+                  />
+                  <span>Struk</span>
+                </label>
+                <label className={`flex items-center justify-center gap-1 p-1 rounded-lg border text-[10px] font-medium cursor-pointer transition-all ${
+                  printKitchenOpt ? 'bg-primary/5 border-primary/40 text-primary' : 'bg-background/50 border-muted opacity-70'
+                }`}>
+                  <input
+                    type="checkbox"
+                    checked={printKitchenOpt}
+                    onChange={e => {
+                      setPrintKitchenOpt(e.target.checked);
+                      setDeviceAutoPrint({ kitchen: e.target.checked });
+                    }}
+                    className="rounded text-primary h-3 w-3"
+                  />
+                  <span>Dapur</span>
+                </label>
+                <label className={`flex items-center justify-center gap-1 p-1 rounded-lg border text-[10px] font-medium cursor-pointer transition-all ${
+                  printLabelOpt ? 'bg-emerald-50 border-emerald-500/50 text-emerald-700 font-semibold' : 'bg-background/50 border-muted opacity-70'
+                }`}>
+                  <input
+                    type="checkbox"
+                    checked={printLabelOpt}
+                    onChange={e => {
+                      setPrintLabelOpt(e.target.checked);
+                      setDeviceAutoPrint({ label: e.target.checked });
+                    }}
+                    className="rounded text-emerald-600 h-3 w-3"
+                  />
+                  <span>Label</span>
+                </label>
+              </div>
+            </div>
+
           </div>
 
           {/* Kolom Kanan: Payment Method, Cash Input, Notes */}
-          <div className="space-y-3">
+          <div className="space-y-2">
             <div>
-              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Metode Pembayaran</p>
-              <div className="grid grid-cols-4 gap-1.5">
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">Metode Pembayaran</p>
+              <div className="grid grid-cols-4 sm:grid-cols-5 gap-1">
                 {payMethods.map(m => {
                   const isBalance = m.code === 'balance';
                   const noMember = isBalance && !selectedMember;
@@ -2152,7 +2235,7 @@ function CheckoutDialog({
                       disabled={noMember}
                       title={noMember ? 'Pilih member terlebih dulu' : undefined}
                       className={cn(
-                        'flex flex-col items-center justify-center gap-1 p-2 rounded-xl border-2 text-[10px] font-semibold transition-all',
+                        'flex flex-col items-center justify-center gap-0.5 p-1.5 rounded-xl border-2 text-[9px] sm:text-[10px] font-semibold transition-all',
                         paymentMethod === m.code
                           ? 'border-primary bg-primary/5 text-primary shadow-sm'
                           : noMember
@@ -2161,21 +2244,21 @@ function CheckoutDialog({
                       )}
                     >
                       {m.icon?.startsWith('http') || m.icon?.startsWith('/') ? (
-                        <img src={m.icon.startsWith('http') ? m.icon : `/uploads/${m.icon.replace(/^\/uploads\//, '')}`} alt={m.name} className="h-6 w-auto object-contain" />
+                        <img src={m.icon.startsWith('http') ? m.icon : `/uploads/${m.icon.replace(/^\/uploads\//, '')}`} alt={m.name} className="h-5 w-auto object-contain" />
                       ) : m.code === 'cash' || m.type === 'cash' ? (
-                        <Banknote className="w-5 h-5 text-emerald-600" />
+                        <Banknote className="w-4 h-4 text-emerald-600" />
                       ) : m.code === 'qris' || m.type === 'digital' ? (
-                        <QrCode className="w-5 h-5 text-indigo-600" />
+                        <QrCode className="w-4 h-4 text-indigo-600" />
                       ) : m.code === 'balance' || m.type === 'wallet' ? (
-                        <Wallet className="w-5 h-5 text-amber-600" />
+                        <Wallet className="w-4 h-4 text-amber-600" />
                       ) : m.code === 'transfer' || m.type === 'transfer' ? (
-                        <Building2 className="w-5 h-5 text-blue-600" />
+                        <Building2 className="w-4 h-4 text-blue-600" />
                       ) : (
-                        <CreditCard className="w-5 h-5 text-muted-foreground" />
+                        <CreditCard className="w-4 h-4 text-muted-foreground" />
                       )}
-                      <span className="text-[10px] text-center leading-tight">{m.name}</span>
+                      <span className="text-[9px] text-center leading-tight truncate w-full px-0.5">{m.name}</span>
                       {isBalance && selectedMember && (
-                        <span className="text-[9px] text-emerald-600 font-bold">
+                        <span className="text-[8px] text-emerald-600 font-bold">
                           {fmt(selectedMember.balance || 0)}
                         </span>
                       )}
@@ -2187,20 +2270,20 @@ function CheckoutDialog({
                 <button
                   onClick={() => setPaymentMethod('pending')}
                   className={cn(
-                    'flex flex-col items-center justify-center gap-1 p-2 rounded-xl border-2 text-[10px] font-semibold transition-all',
+                    'flex flex-col items-center justify-center gap-0.5 p-1.5 rounded-xl border-2 text-[9px] sm:text-[10px] font-semibold transition-all',
                     isPendingPay
                       ? 'border-amber-400 bg-amber-50 text-amber-700 shadow-sm'
                       : 'border-border hover:border-amber-300 text-muted-foreground hover:text-amber-700'
                   )}
                 >
-                  <Clock className="w-5 h-5" />
-                  <span className="text-[10px] text-center leading-tight">Bayar Nanti</span>
+                  <Clock className="w-4 h-4" />
+                  <span className="text-[9px] text-center leading-tight">Bayar Nanti</span>
                 </button>
               </div>
 
               {isPendingPay && (
-                <div className="mt-2 flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                  <Clock className="w-3.5 h-3.5 flex-shrink-0" />
+                <div className="mt-1.5 flex items-center gap-1.5 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
+                  <Clock className="w-3 h-3 flex-shrink-0" />
                   Order akan dibuat dengan status <strong>belum bayar</strong>.
                 </div>
               )}
@@ -2208,13 +2291,13 @@ function CheckoutDialog({
 
             {/* Input Tunai (Hanya jika Cash) */}
             {paymentMethod === 'cash' && (
-              <div className="bg-primary/5 rounded-xl p-2.5 space-y-2 border border-primary/20">
+              <div className="bg-primary/5 rounded-xl p-2 space-y-1.5 border border-primary/20">
                 <div>
-                  <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">Tunai Diterima</p>
+                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">Tunai Diterima</p>
                   <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-medium">Rp</span>
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-medium text-[11px]">Rp</span>
                     <Input 
-                      className="pl-9 font-bold text-lg h-11"
+                      className="pl-8 font-bold text-sm h-8"
                       value={cashReceived}
                       onChange={e => {
                         const val = e.target.value.replace(/\D/g, '');
@@ -2224,124 +2307,42 @@ function CheckoutDialog({
                     />
                   </div>
                 </div>
-                <div className="flex justify-between items-center text-sm">
+                <div className="flex justify-between items-center text-[11px]">
                   <span className="font-medium text-muted-foreground">Kembalian:</span>
-                  <span className={cn("font-bold text-lg", changeAmount >= 0 ? "text-emerald-600" : "text-red-500")}>
+                  <span className={cn("font-bold text-sm sm:text-base", changeAmount >= 0 ? "text-emerald-600" : "text-red-500")}>
                     {changeAmount < 0 ? "-" : ""}{fmt(Math.abs(changeAmount))}
                   </span>
                 </div>
               </div>
             )}
 
-            {/* Data Pelanggan / Nota WhatsApp */}
-            <div className="bg-emerald-500/5 rounded-xl p-2.5 border border-emerald-500/20 space-y-1.5">
-              <div className="flex items-center justify-between text-xs">
-                <span className="font-semibold text-emerald-800 dark:text-emerald-400 flex items-center gap-1.5">
-                  <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
-                  Kirim Nota via WhatsApp (Opsional):
-                </span>
-                {customerPhone && (
-                  <span className="text-[10px] text-emerald-600 font-medium">Otomatis terisi</span>
-                )}
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <div>
-                  <label className="text-[10px] text-muted-foreground block mb-0.5">Nama Pelanggan</label>
-                  <Input
-                    placeholder="Kosong = Umum"
-                    value={customerName}
-                    onChange={e => setCustomerName && setCustomerName(e.target.value)}
-                    className="h-8 text-xs bg-background"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] text-muted-foreground block mb-0.5">No. WhatsApp Pelanggan</label>
-                  <Input
-                    placeholder="Contoh: 08123456789"
-                    value={customerPhone}
-                    onChange={e => setCustomerPhone && setCustomerPhone(e.target.value)}
-                    className="h-8 text-xs font-mono bg-background"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Notes */}
-            <div>
-              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">Catatan</p>
-              <Input placeholder="Catatan pesanan…" value={notes} onChange={e => setNotes(e.target.value)} className="h-8 text-xs" />
-            </div>
-
-            {/* Opsi Cetak Otomatis saat Bayar */}
-            <div className="bg-muted/40 rounded-xl p-2.5 border space-y-1.5">
-              <div className="flex items-center justify-between text-xs">
-                <span className="font-semibold text-muted-foreground flex items-center gap-1.5">
-                  <Printer className="w-3.5 h-3.5 text-primary" />
-                  Cetak Otomatis saat Bayar:
-                </span>
-                <span className="text-[10px] text-muted-foreground">(bisa cetak manual nanti)</span>
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                <label className={`flex items-center gap-2 p-2 rounded-lg border text-xs font-medium cursor-pointer transition-all ${
-                  printReceiptOpt ? 'bg-primary/5 border-primary/40 text-primary' : 'bg-background/50 border-muted opacity-70'
-                }`}>
-                  <input
-                    type="checkbox"
-                    checked={printReceiptOpt}
-                    onChange={e => setPrintReceiptOpt(e.target.checked)}
-                    className="rounded text-primary"
-                  />
-                  <span>Struk</span>
-                </label>
-                <label className={`flex items-center gap-2 p-2 rounded-lg border text-xs font-medium cursor-pointer transition-all ${
-                  printKitchenOpt ? 'bg-primary/5 border-primary/40 text-primary' : 'bg-background/50 border-muted opacity-70'
-                }`}>
-                  <input
-                    type="checkbox"
-                    checked={printKitchenOpt}
-                    onChange={e => setPrintKitchenOpt(e.target.checked)}
-                    className="rounded text-primary"
-                  />
-                  <span>Dapur</span>
-                </label>
-                <label className={`flex items-center gap-2 p-2 rounded-lg border text-xs font-medium cursor-pointer transition-all ${
-                  printLabelOpt ? 'bg-emerald-50 border-emerald-500/50 text-emerald-700 font-semibold' : 'bg-background/50 border-muted opacity-70'
-                }`}>
-                  <input
-                    type="checkbox"
-                    checked={printLabelOpt}
-                    onChange={e => setPrintLabelOpt(e.target.checked)}
-                    className="rounded text-primary"
-                  />
-                  <span>Label Cup</span>
-                </label>
-              </div>
-            </div>
-
-            {/* Actions */}
-            <div className="grid grid-cols-3 gap-2 pt-2 border-t mt-2">
-              <Button variant="outline" onClick={onClose} disabled={placing} className="h-11">Batal</Button>
-              <Button variant="outline" onClick={() => onConfirm(false, true, printLabelOpt, { cashReceived: parseInt(cashReceived.replace(/\D/g, '')) || 0, changeAmount: Math.max(0, changeAmount), dpAmount: payType === 'dp' ? parseFloat(dpVal) : null, isDp: payType === 'dp' && parseFloat(dpVal) > 0 })} disabled={placing} className="h-11 gap-1 text-xs px-1">
-                {placing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Utensils className="w-3.5 h-3.5" />}
-                Dapur
-              </Button>
-              <Button
-                onClick={() => {
-                  if (paymentMethod === 'qris') {
-                    setStep('qris');
-                  } else {
-                    onConfirm(!isPendingPay && printReceiptOpt, printKitchenOpt, printLabelOpt, { cashReceived: parseInt(cashReceived.replace(/\D/g, '')) || 0, changeAmount: Math.max(0, changeAmount), dpAmount: payType === 'dp' ? parseFloat(dpVal) : null, isDp: payType === 'dp' && parseFloat(dpVal) > 0 });
-                  }
-                }}
-                disabled={placing || (paymentMethod === 'cash' && changeAmount < 0)}
-                className={cn('h-11 gap-1 text-xs font-semibold', isPendingPay && 'bg-amber-500 hover:bg-amber-600', payType === 'dp' && !isPendingPay && 'bg-amber-600 hover:bg-amber-700')}
-              >
-                {placing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : isPendingPay ? <Clock className="w-3.5 h-3.5" /> : <Receipt className="w-3.5 h-3.5" />}
-                {paymentMethod === 'qris' ? 'Lanjut QRIS' : (isPendingPay ? 'Simpan' : payType === 'dp' ? `Bayar DP (${fmt(effectiveDue)})` : 'Bayar')}
-              </Button>
-            </div>
+          </div>
           </div>
         </div>
+
+        {/* Modal Footer Actions */}
+        <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-3 border-t mt-1 w-full shrink-0">
+          <Button variant="outline" onClick={onClose} disabled={placing} className="sm:w-auto h-10">Batal</Button>
+          <Button variant="outline" onClick={() => onConfirm(false, true, printLabelOpt, { cashReceived: parseInt(cashReceived.replace(/\D/g, '')) || 0, changeAmount: Math.max(0, changeAmount), dpAmount: payType === 'dp' ? parseFloat(dpVal) : null, isDp: payType === 'dp' && parseFloat(dpVal) > 0 })} disabled={placing} className="sm:w-auto h-10 gap-2 px-4">
+            {placing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Utensils className="w-4 h-4" />}
+            Dapur Saja
+          </Button>
+          <Button
+            onClick={() => {
+              if (paymentMethod === 'qris') {
+                setStep('qris');
+              } else {
+                onConfirm(!isPendingPay && printReceiptOpt, printKitchenOpt, printLabelOpt, { cashReceived: parseInt(cashReceived.replace(/\D/g, '')) || 0, changeAmount: Math.max(0, changeAmount), dpAmount: payType === 'dp' ? parseFloat(dpVal) : null, isDp: payType === 'dp' && parseFloat(dpVal) > 0 });
+              }
+            }}
+            disabled={placing || (paymentMethod === 'cash' && changeAmount < 0)}
+            className={cn('sm:w-auto h-10 gap-2 font-semibold px-6', isPendingPay && 'bg-amber-500 hover:bg-amber-600', payType === 'dp' && !isPendingPay && 'bg-amber-600 hover:bg-amber-700')}
+          >
+            {placing ? <Loader2 className="w-4 h-4 animate-spin" /> : isPendingPay ? <Clock className="w-4 h-4" /> : <Receipt className="w-4 h-4" />}
+            {paymentMethod === 'qris' ? 'Lanjut QRIS' : (isPendingPay ? 'Simpan' : payType === 'dp' ? `Bayar DP` : 'Bayar')}
+          </Button>
+        </div>
+        </>
         )}
       </DialogContent>
     </Dialog>
@@ -2390,15 +2391,15 @@ function VoucherInput({ subtotal, appliedVoucher, onApplied, onRemove, branchId 
 
   return (
     <div className="flex items-center gap-1.5">
-      <Ticket className="w-4 h-4 text-muted-foreground shrink-0" />
+      <Ticket className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
       <Input
         value={code}
         onChange={e => setCode(e.target.value.toUpperCase())}
         onKeyDown={e => e.key === 'Enter' && handleCheck()}
         placeholder="Kode voucher..."
-        className="h-8 text-sm flex-1 font-mono"
+        className="h-7 text-[10px] flex-1 font-mono px-2"
       />
-      <Button size="sm" variant="outline" className="h-8 px-2.5 text-xs shrink-0"
+      <Button size="sm" variant="outline" className="h-7 px-2 text-[10px] shrink-0"
         onClick={handleCheck} disabled={checking || !code.trim()}>
         {checking ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Pakai'}
       </Button>

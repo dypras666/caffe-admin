@@ -10,7 +10,8 @@ import { useState, useEffect } from 'react';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../../components/ui/select';
 import { useGlobalBranch } from '../../context/BranchContext';
 import { useFetch } from '../../hooks/useApi';
-import { Building2 } from 'lucide-react';
+import { Building2, Search } from 'lucide-react';
+import CommandMenu from '../CommandMenu';
 
 function GlobalBranchSelect() {
   const { branchId, setBranchId, isAdmin } = useGlobalBranch();
@@ -77,6 +78,7 @@ export default function Topbar({ title }) {
       </h1>
 
       <div className="flex items-center gap-2">
+        <CommandMenu />
         <GlobalBranchSelect />
         {/* Device printer quick-access */}
         <DevicePrinterSettings trigger={

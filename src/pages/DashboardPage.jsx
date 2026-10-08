@@ -1,7 +1,7 @@
 import { useFetch } from '../hooks/useApi';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
-import { ShoppingBag, Users, ClipboardList, TrendingUp, Coffee, Loader2 } from 'lucide-react';
+import { ShoppingBag, Users, ClipboardList, TrendingUp, Coffee, Loader2, CalendarDays, X } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
 
 function StatCard({ icon: Icon, label, value, sub, color = 'bg-primary' }) {
@@ -37,12 +37,20 @@ const STATUS_LABEL = {
 
 import { useGlobalBranch } from '../context/BranchContext';
 
+import { Building2 } from 'lucide-react';
+
 export default function DashboardPage() {
   const { user } = useAuth();
-  const { branchId } = useGlobalBranch();
+  const { branchId, setBranchId, isAdmin } = useGlobalBranch();
+  const { data: branchData } = useFetch('/branches');
+  const branches = branchData?.branches || [];
 
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
   const qs = new URLSearchParams();
   if (branchId !== 'all') qs.set('branch_id', branchId);
+  if (startDate) qs.set('start_date', startDate);
+  if (endDate) qs.set('end_date', endDate);
 
   const { data, loading, refetch } = useFetch(`/dashboard/stats?${qs}`);
 
@@ -70,6 +78,48 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row gap-3">
+        {isAdmin && (
+          <div className="md:hidden bg-card p-3 rounded-xl border flex items-center gap-3">
+            <Building2 className="w-5 h-5 text-muted-foreground shrink-0" />
+            <div className="flex-1">
+              <Select value={branchId || 'all'} onValueChange={setBranchId}>
+                <SelectTrigger className="w-full bg-background h-10">
+                  <SelectValue placeholder="Pilih Cabang" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Cabang</SelectItem>
+                  {branches.map(b => <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        )}
+
+        {/* Date Filter */}
+        <div className="bg-card p-2 rounded-xl border flex items-center gap-2 flex-1 sm:max-w-md">
+          <CalendarDays className="w-5 h-5 text-muted-foreground shrink-0 ml-1" />
+          <input 
+            type="date" 
+            className="flex-1 bg-background border rounded-lg px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-primary/50"
+            value={startDate}
+            onChange={e => setStartDate(e.target.value)}
+          />
+          <span className="text-muted-foreground text-sm">-</span>
+          <input 
+            type="date" 
+            className="flex-1 bg-background border rounded-lg px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-primary/50"
+            value={endDate}
+            onChange={e => setEndDate(e.target.value)}
+          />
+          {(startDate || endDate) && (
+            <button onClick={() => { setStartDate(''); setEndDate(''); }} className="p-1.5 hover:bg-secondary rounded-lg text-muted-foreground transition-colors">
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+      </div>
+
       {loading ? (
         <div className="flex items-center justify-center h-64">
           <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
