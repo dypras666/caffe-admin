@@ -97,6 +97,7 @@ export default function ServicesPage() {
   const [openCreate, setOpenCreate] = useState(false);
   const [updatingId, setUpdatingId] = useState(null);
   const [creating, setCreating] = useState(false);
+  const [showSummary, setShowSummary] = useState(false); // Default hidden on mobile to save space
 
   // Settle / Pelunasan Dialog State
   const [openSettle, setOpenSettle] = useState(false);
@@ -444,7 +445,14 @@ export default function ServicesPage() {
       </div>
 
       {/* Status Summary Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
+      <div className="flex items-center justify-between mt-2">
+        <h2 className="text-sm font-semibold text-muted-foreground">Ringkasan Status</h2>
+        <Button variant="outline" size="sm" onClick={() => setShowSummary(!showSummary)} className="h-7 text-xs px-2 sm:hidden">
+          {showSummary ? 'Sembunyikan' : 'Tampilkan'}
+        </Button>
+      </div>
+      
+      <div className={`grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3 ${!showSummary ? 'hidden sm:grid' : ''}`}>
         {/* Total Data */}
         <div
           onClick={() => { setStatusFilter('all'); setPage(1); }}

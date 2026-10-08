@@ -64,13 +64,13 @@ export default function AppLayout() {
   const title = PAGE_TITLES[location.pathname] || cafeName || 'Dashboard';
 
   return (
-    <div className="h-screen bg-background flex overflow-hidden">
+    <div className="h-[100dvh] bg-background flex overflow-hidden">
       <Sidebar />
 
       {/* Main content — offset by sidebar width */}
       <div
         className={cn(
-          'flex-1 flex flex-col min-w-0 transition-all duration-300 h-screen',
+          'flex-1 flex flex-col min-w-0 transition-all duration-300 h-[100dvh]',
           'lg:ml-[var(--sidebar-width)]',
           collapsed && 'lg:ml-[var(--sidebar-width-collapsed)]'
         )}
@@ -79,7 +79,7 @@ export default function AppLayout() {
         <main className={cn(
           ['/pos', '/waiter'].includes(location.pathname)
             ? 'flex-1 overflow-hidden p-0'   // POS/Waiter: no scroll, no padding — manages own layout
-            : 'flex-1 overflow-auto p-5'
+            : 'flex-1 overflow-auto p-3 pb-24 sm:p-5'
         )}>
           <Outlet />
         </main>
