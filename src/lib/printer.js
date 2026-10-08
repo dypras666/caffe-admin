@@ -812,6 +812,54 @@ export async function printViaUSB(receipt, printer, type = 'receipt') {
   }
 }
 
+// ─── Serial (Web Serial API) ─────────────────────────────────
+// Untuk printer thermal Bluetooth Classic (SPP) yang sudah ter-pair di OS, mis. RPP02N,
+// serta printer USB-serial. Di macOS pilih `tty.NamaPrinter` di dialog, bukan `cu.*`.
+const SERIAL_DEFAULT_BAUD_RATE = 9600;
+const SERIAL_WRITE_CHUNK_SIZE = 512;
+
+export async function scanSerialPrinters() {
+  if (!navigator.serial) throw new Error('Web Serial tidak didukung browser ini. Gunakan Chrome/Edge di desktop (HTTPS).');
+  const port = await navigator.serial.requestPort();
+  const { usbVendorId, usbProductId } = port.getInfo();
+  return {
+    id: `serial-${usbVendorId ?? 'bt'}-${usbProductId ?? 'spp'}`,
+    name: 'Serial / Bluetooth Printer',
+    connection: 'serial',
+    paper_width: '58mm',
+    char_per_line: 32,
+  };
+}
+
+// Port yang sudah pernah diizinkan dipakai ulang tanpa dialog. Kalau ada lebih dari satu
+// atau belum ada, minta user memilih (butuh klik langsung dari user).
+async function resolveSerialPort() {
+  const grantedPorts = await navigator.serial.getPorts();
+  return grantedPorts.length === 1 ? grantedPorts[0] : navigator.serial.requestPort();
+}
+
+export async function printViaSerial(receipt, printer, type = 'receipt') {
+  if (!navigator.serial) throw new Error('Web Serial tidak didukung');
+
+  const port = await resolveSerialPort();
+  const escpos = type === 'label' ? buildLabelEscPos(receipt, printer) : buildEscPos(receipt, printer);
+
+  await port.open({ baudRate: printer?.baud_rate || SERIAL_DEFAULT_BAUD_RATE });
+  try {
+    const writer = port.writable.getWriter();
+    try {
+      for (let offset = 0; offset < escpos.length; offset += SERIAL_WRITE_CHUNK_SIZE) {
+        await writer.write(escpos.slice(offset, offset + SERIAL_WRITE_CHUNK_SIZE));
+      }
+    } finally {
+      writer.releaseLock();
+    }
+  } finally {
+    // close() menunggu buffer tertulis tuntas ke printer; port dibuka ulang di cetakan berikutnya
+    await port.close();
+  }
+}
+
 // ─── Smart print — device-local first, site default fallback ─
 // html: pre-built HTML string for browser/network print
 // receipt: raw receipt data object for ESC/POS (Bluetooth/USB)
@@ -843,6 +891,15 @@ export async function smartPrint(html, sitePrinter, type = 'receipt', receipt = 
       console.warn('Bluetooth print failed, falling back to browser print:', btErr);
       printHTML(html);
       throw new Error(`Koneksi Bluetooth tidak merespons (${btErr.message}). Dialihkan ke dialog cetak browser.`);
+    }
+  } else if (conn === 'serial') {
+    try {
+      if (!receipt) throw new Error('Data receipt diperlukan untuk print Serial');
+      await printViaSerial(receipt, printer, type);
+    } catch (serialErr) {
+      console.warn('Serial print failed, falling back to browser print:', serialErr);
+      printHTML(html);
+      throw new Error(`Koneksi Serial tidak merespons (${serialErr.message}). Dialihkan ke dialog cetak browser.`);
     }
   } else if (conn === 'usb') {
     try {

@@ -15,14 +15,14 @@ import { Input } from './ui/input';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from './ui/select';
 import { Badge } from './ui/badge';
 import {
-  Printer, Bluetooth, Wifi, Usb, Monitor, Trash2,
+  Printer, Bluetooth, Wifi, Usb, Cable, Monitor, Trash2,
   Search, CheckCircle2, AlertCircle, Loader2, Settings,
 } from 'lucide-react';
 import {
   getDevicePrinter, setDevicePrinter, removeDevicePrinter,
   getDeviceAutoPrint, setDeviceAutoPrint,
-  scanBluetoothPrinters, scanUSBPrinters,
-  smartPrint, buildReceiptHTML, buildLabelHTML, printViaBluetooth,
+  scanBluetoothPrinters, scanUSBPrinters, scanSerialPrinters,
+  smartPrint, buildReceiptHTML, buildLabelHTML, printViaBluetooth, printViaSerial,
 } from '../lib/printer';
 
 const TYPES = [
@@ -34,7 +34,8 @@ const TYPES = [
 const CONN_OPTIONS = [
   { value: 'browser',   label: 'Browser (window.print)',  icon: Monitor,   desc: 'Dialog cetak macOS / browser (Paling direkomendasikan untuk Mac)' },
   { value: 'network',   label: 'Network / IP',            icon: Wifi,      desc: 'Printer di jaringan lokal via IP LAN/WiFi' },
-  { value: 'bluetooth', label: 'Bluetooth',               icon: Bluetooth, desc: 'Web Bluetooth BLE (Perangkat BLE/Android)' },
+  { value: 'serial',    label: 'Bluetooth Classic / Serial', icon: Cable,  desc: 'Web Serial (Chrome/Edge desktop) — printer thermal Bluetooth SPP seperti RPP02N' },
+  { value: 'bluetooth', label: 'Bluetooth BLE',           icon: Bluetooth, desc: 'Web Bluetooth BLE (Perangkat BLE/Android)' },
   { value: 'usb',       label: 'USB',                     icon: Usb,       desc: 'Web USB API (Chrome/Edge)' },
 ];
 
@@ -154,6 +155,8 @@ function ConfigureDialog({ type, label, existing, onSave, onClose }) {
         found = await scanBluetoothPrinters();
       } else if (form.connection === 'usb') {
         found = await scanUSBPrinters();
+      } else if (form.connection === 'serial') {
+        found = await scanSerialPrinters();
       }
       if (found) {
         setForm(f => ({
@@ -224,6 +227,8 @@ function ConfigureDialog({ type, label, existing, onSave, onClose }) {
       if (form.connection === 'bluetooth') {
         // Bluetooth: send ESC/POS directly
         await printViaBluetooth(testData, printer, type);
+      } else if (form.connection === 'serial') {
+        await printViaSerial(testData, printer, type);
       } else {
         const testHtml = type === 'label'
           ? buildLabelHTML(testData, printer)
@@ -247,7 +252,8 @@ function ConfigureDialog({ type, label, existing, onSave, onClose }) {
 
   const connOpt = CONN_OPTIONS.find(c => c.value === form.connection);
   const ConnIcon = connOpt?.icon || Monitor;
-  const canScan = form.connection === 'bluetooth' || form.connection === 'usb';
+  const canScan = form.connection === 'bluetooth' || form.connection === 'usb' || form.connection === 'serial';
+  const scanLabelByConnection = { bluetooth: 'Bluetooth', usb: 'USB', serial: 'Serial' };
 
   return (
     <Dialog open onOpenChange={onClose}>
@@ -273,7 +279,7 @@ function ConfigureDialog({ type, label, existing, onSave, onClose }) {
           {/* Connection type */}
           <div>
             <label className="text-xs font-medium text-muted-foreground mb-1 block">Tipe Koneksi</label>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {CONN_OPTIONS.map(opt => {
                 const Icon = opt.icon;
                 const sel = form.connection === opt.value;
@@ -302,7 +308,7 @@ function ConfigureDialog({ type, label, existing, onSave, onClose }) {
                 {scanning
                   ? <Loader2 className="w-4 h-4 animate-spin" />
                   : <Search className="w-4 h-4" />}
-                {scanning ? 'Mencari printer...' : `Scan ${form.connection === 'bluetooth' ? 'Bluetooth' : 'USB'} Printer`}
+                {scanning ? 'Mencari printer...' : `Scan ${scanLabelByConnection[form.connection]} Printer`}
               </Button>
               {scanError && (
                 <div className="flex items-start gap-1.5 text-xs text-destructive bg-destructive/5 rounded-lg px-3 py-2">
@@ -332,13 +338,25 @@ function ConfigureDialog({ type, label, existing, onSave, onClose }) {
                   Membutuhkan Chrome/Edge dengan izin USB. Colokkan printer terlebih dahulu.
                 </p>
               )}
+              {form.connection === 'serial' && (
+                <div className="space-y-1">
+                  <p className="text-[10px] text-muted-foreground">
+                    Pair printer di pengaturan Bluetooth OS dulu. Di Mac, pilih <strong>tty.NamaPrinter</strong> (bukan cu.).
+                  </p>
+                  {!navigator.serial && (
+                    <p className="text-[10px] text-amber-600 font-medium">
+                      ⚠ Browser ini tidak mendukung Web Serial API (butuh Chrome/Edge desktop, HTTPS).
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
           {/* Network IP input */}
           {form.connection === 'network' && (
-            <div className="grid grid-cols-3 gap-2">
-              <div className="col-span-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div className="sm:col-span-2">
                 <label className="text-xs font-medium text-muted-foreground mb-1 block">IP Address *</label>
                 <Input value={form.ip} onChange={e => upd('ip', e.target.value)}
                   placeholder="192.168.1.100" className="h-9 font-mono text-sm" />
@@ -388,15 +406,15 @@ function ConfigureDialog({ type, label, existing, onSave, onClose }) {
           )}
         </DialogBody>
 
-        <DialogFooter className="p-3 sm:p-4 border-t bg-muted/20 shrink-0 m-0 flex flex-row items-center justify-between gap-2">
-          <Button type="button" variant="outline" size="sm" className="gap-1.5 h-9 text-xs"
+        <DialogFooter className="p-3 sm:p-4 border-t bg-muted/20 shrink-0 m-0 flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-2">
+          <Button type="button" variant="outline" size="sm" className="gap-1.5 h-9 text-xs w-full sm:w-auto"
             onClick={handleTest} disabled={testing}>
             {testing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
             Test Print
           </Button>
-          <div className="flex items-center gap-2">
-            <Button type="button" variant="outline" onClick={onClose} className="h-9 text-xs">Batal</Button>
-            <Button type="button" onClick={handleSave} className="h-9 text-xs min-w-[80px]">Simpan</Button>
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+            <Button type="button" variant="outline" onClick={onClose} className="h-9 text-xs flex-1 sm:flex-none">Batal</Button>
+            <Button type="button" onClick={handleSave} className="h-9 text-xs flex-1 sm:flex-none min-w-[80px]">Simpan</Button>
           </div>
         </DialogFooter>
       </DialogContent>
@@ -496,7 +514,7 @@ export default function DevicePrinterSettings({ trigger }) {
 
             <div className="border-t pt-2 space-y-1 text-[11px] text-muted-foreground">
               <p>
-                <strong>Tips Mac &amp; Tablet:</strong> Printer thermal Bluetooth pada umumnya menggunakan Bluetooth Classic (SPP) yang tidak didukung Web Bluetooth browser Mac/iOS. Disarankan memilih koneksi <strong>Browser (window.print)</strong> atau <strong>Network / IP</strong> agar cetak langsung lancar.
+                <strong>Tips Mac &amp; Tablet:</strong> Printer thermal Bluetooth pada umumnya menggunakan Bluetooth Classic (SPP) yang tidak didukung Web Bluetooth. Di Chrome/Edge desktop pilih koneksi <strong>Bluetooth Classic / Serial</strong>. Di Mac/tablet/iOS gunakan <strong>Browser (window.print)</strong> atau <strong>Network / IP</strong>.
               </p>
               <p className="text-[10px] opacity-75">
                 Jika belum dikonfigurasi, printer default sistem akan digunakan sebagai fallback.
